@@ -37,7 +37,7 @@
 //!
 //! 1. All *viable* positions are found for each orientation.
 //! 2. The *reachable* positions are initialized with *spawn* positions.
-//! 3. Positions are moved left, right, down, clockwise, and counter-clockwise
+//! 3. Positions are moved left, right, down, clockwise, 180, and counter-clockwise
 //!    according to SRS rules for the given piece and each orientation.
 //! 4. Step 3 is repeated until no new *reachable* positions are discovered.
 //! 5. All *placeable* positions are found: positions that are *reachable*, in
@@ -248,7 +248,7 @@ impl PlacementMachine {
     }
 
     /// Visit a single orientation.  If dirty, [flood fills] the reachable
-    /// positions, then computes [kicks] in both directions.  If new reachable
+    /// positions, then computes [kicks] in all directions.  If new reachable
     /// positions are discovered during kicks, those other orientations are
     /// marked dirty.
     ///
@@ -256,6 +256,7 @@ impl PlacementMachine {
     /// [kicks]:       Kicks
     fn step(&mut self, o: Orientation) {
         let ccw = o.ccw() as usize;
+        let flip = o.flip() as usize;
         let this = o as usize;
         let cw = o.cw() as usize;
 
@@ -274,6 +275,12 @@ impl PlacementMachine {
             if (self.reachable[ccw] & ccw_more) != ccw_more {
                 self.reachable[ccw] |= ccw_more;
                 self.dirty[ccw] = true;
+            }
+
+            let flip_more = FLIP_KICKS[this].kick_flip(self.reachable[this], self.viable[flip]);
+            if (self.reachable[flip] & flip_more) != flip_more {
+                self.reachable[flip] |= flip_more;
+                self.dirty[flip] = true;
             }
 
             self.dirty[this] = false;
@@ -519,6 +526,12 @@ pub struct Kicks {
     masks: [u64; 5],
 }
 
+/// Flip Kick (r180) data for one piece shape, in one orientation.
+pub struct FlipKicks {
+    rotates: [u8; 2],
+    masks: [u64; 2],
+}
+
 /// Collision data for every tetromino.
 ///
 /// Indexed first by piece [shape](Shape), then by [orientation](Orientation).
@@ -611,7 +624,16 @@ static O_KICKS: [Kicks; 4] = [
     Kicks::make([(0, 0); 5]),
 ];
 
-impl Collision {
+/// Kick data for jstris180
+static FLIP_KICKS: [FlipKicks; 4] = [
+    FlipKicks::make([(0, -1), (0, 0)]),
+    FlipKicks::make([(-1, 0), (0, 0)]),
+    FlipKicks::make([(0, 1), (0, 0)]),
+    FlipKicks::make([(1, 0), (0, 0)]),
+];
+
+
+impl Collision { 
     /// Compute collision data for a single shape and orientation from the given
     /// mino coordinates.  The provided coordinates are for a piece at position
     /// (0, 0), and are specified by `(column, row)`, just like [`Piece`].
@@ -662,6 +684,56 @@ impl Collision {
         PVec(grounded << self.placeable_shift >> self.placeable_shift)
     }
 }
+
+
+impl FlipKicks {
+    /// Compute kick data for a single shape and orientation from the given kick
+    /// offsets.  The offsets are specified by `(column, row)`, and are *not*
+    /// relative to the piece's center of rotation.  Instead they are relative
+    /// to the piece's bounding box, like for [`Piece`].
+    ///
+    /// [`Piece`]: crate::gameplay::Piece
+    pub const fn make(offsets: [(i8, i8); 2]) -> FlipKicks {
+        pub const fn make_one(cols: i8, rows: i8) -> (u8, u64) {
+            debug_assert!(cols.abs() < 10);
+            debug_assert!(rows.abs() < 4);
+
+            let row_mask = shift_left_signed(FULL_10, cols) & FULL_10;
+            let board_mask = shift_left_signed(replicate_row(row_mask), rows * 10) & FULL_60;
+            let signed_shift = cols + rows * 10;
+
+            ((signed_shift + 64) as u8 % 64, board_mask)
+        }
+
+        let kick0 = make_one(offsets[0].0, offsets[0].1);
+        let kick1 = make_one(offsets[1].0, offsets[1].1);
+
+        FlipKicks {
+            rotates: [kick0.0, kick1.0],
+            masks: [kick0.1, kick1.1],
+        }
+    }
+    pub fn kick_flip(&self, start: PVec, flip_viable: PVec) -> PVec {
+        const fn kick(kicks: &FlipKicks, num: usize, from: u64, to: u64, mask: u64) -> (u64, u64) {
+            let kicked = from.rotate_left(kicks.rotates[num] as u32) & kicks.masks[num] & mask;
+            (
+                from ^ kicked.rotate_right(kicks.rotates[num] as u32),
+                to | kicked,
+            )
+        }
+
+        let from = start.0;
+        let to = 0;
+        let mask = flip_viable.0;
+
+        let (from, to) = kick(self, 0, from, to, mask);
+        let (_from, to) = kick(self, 1, from, to, mask);
+
+        PVec(to)
+    }
+}
+
+
 
 impl Kicks {
     /// Compute kick data for a single shape and orientation from the given kick
@@ -819,5 +891,16 @@ impl std::ops::BitAndAssign for PVec {
 impl std::ops::BitOrAssign for PVec {
     fn bitor_assign(&mut self, rhs: Self) {
         *self = *self | rhs;
+    }
+}
+
+
+
+#[test]
+fn test_flip(){
+    let test_board = Board(1090896502727);
+    println!("TEST BOARD:{test_board}");
+    for (_piece, new_board) in Placements::place(test_board, Shape::L).canonical() {
+        println!("PLACEMENT:{}",new_board);
     }
 }

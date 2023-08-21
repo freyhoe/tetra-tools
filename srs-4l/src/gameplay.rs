@@ -13,6 +13,23 @@
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Board(pub u64);
 
+impl std::fmt::Display for Board {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut to = "\n".to_owned();
+        for row in (0..4).rev() {
+            for col in 0..10 {
+                if self.get(row, col) {
+                    to.push('G');
+                } else {
+                    to.push('_');
+                }
+            }
+            to.push('\n');
+        }
+        write!(f,"{}",to)
+    }
+}
+
 /// A piece, stored as [`shape`], coordinates, and [`orientation`].
 ///
 /// Coordinates are measured from the bottom left of the piece's bounding box.
@@ -502,6 +519,31 @@ impl Piece {
         self
     }
 
+    /// Rotate a piece 180 degrees (flip) according to Jstris180.  If impossible, returns the
+    /// piece unchanged.
+    ///
+    /// See [here](Piece#rotation-system) for more details.
+    #[must_use]
+    pub fn flip(self, board: Board) -> Piece {
+        let orientation = self.orientation.flip();
+
+        let kicks = &FLIP_KICKS[self.orientation as usize];
+        for (kick_col, kick_row) in kicks {
+            let new = Piece {
+                shape: self.shape,
+                col: self.col + kick_col,
+                row: self.row + kick_row,
+                orientation,
+            };
+
+            if new.in_bounds() && !new.collides_in(board) {
+                return new;
+            }
+        }
+
+        self
+    }
+
     /// Rotate a piece counter-clockwise according to SRS.  If impossible,
     /// returns the piece unchanged.
     ///
@@ -632,6 +674,14 @@ static I_KICKS: [[(i8, i8); 5]; 4] = [
     [(-1, 2), (0, 2), (-3, 2), (0, 0), (-3, 3)],
 ];
 
+/// Kick data for jstris180
+static FLIP_KICKS: [[(i8, i8); 2]; 4] = [
+    [(0, -1), (0, 0)],
+    [(-1, 0), (0, 0)],
+    [(0, 1), (0, 0)],
+    [(1, 0), (0, 0)],
+];
+
 /// Kick data for the O piece.
 ///
 /// Referenced by [`KICKS`].
@@ -721,6 +771,16 @@ impl Orientation {
             East => South,
             South => West,
             West => North,
+        }
+    }
+
+    pub fn flip(self) -> Orientation {
+        use Orientation::*;
+        match self {
+            North => South,
+            East => West,
+            South => North,
+            West => East,
         }
     }
 

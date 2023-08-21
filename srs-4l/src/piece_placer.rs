@@ -55,6 +55,7 @@ impl Iterator for PiecePlacer {
                 piece.down(self.board),
                 piece.cw(self.board),
                 piece.ccw(self.board),
+                piece.flip(self.board),
             ] {
                 if !self.seen[new_piece.pack() as usize] {
                     self.seen.set(new_piece.pack() as usize, true);
