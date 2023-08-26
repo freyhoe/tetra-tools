@@ -1,5 +1,7 @@
 //! Game data types and physics.
 
+use serde::{Serialize, Deserialize};
+
 /// A packed bit representation of a board.
 ///
 /// Bit 0 (the least significant bit) represents the bottom left of the board.
@@ -10,7 +12,7 @@
 /// set.  The top 24 bits are always clear.
 ///
 /// This type is `Copy` because it is intended to be cheap to use.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Board(pub u64);
 
 impl std::fmt::Display for Board {
@@ -89,7 +91,7 @@ pub struct Piece {
 /// Each of the conventional single-letter names of tetrominoes.
 ///
 /// The `u8` numeric representation is used as an index sometimes.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Shape {
     I,
@@ -125,6 +127,20 @@ impl Board {
     /// Create an empty board.
     pub fn empty() -> Board {
         Board(0)
+    }
+
+    /// Create a board from a string, lossy function that only tokenizes 'G' and '_'
+    pub fn from_str(s: &str) -> Self {
+        let mut field = 0;
+        let chars = s.chars().filter(|c|c==&'G' || c==&'_').rev();
+        for (index, char) in chars.take(40).enumerate() {
+            let (x,y) = (9 - index % 10, index / 10);
+            let filled = char != '_';
+            if filled{
+                field |= (filled as u64) << y*10 + x
+            }
+        }
+        Self(field)
     }
 
     /// Check whether the cell at the given row and column is set.

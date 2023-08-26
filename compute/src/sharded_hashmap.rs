@@ -110,6 +110,15 @@ impl<K: Hash + Eq + Send, V: Send, const SHARD_SIZE: usize, H: BuildHasher>
         let shards = self.0.drain(..).map(|mutex| mutex.into_inner()).collect();
         FrozenMap(shards, self.1)
     }
+
+    pub fn into_iter(self)-> impl Iterator<Item = (K, V)>{
+        self.0.into_iter().map(|m|{m.into_inner()}).flatten()
+    }
+
+    pub fn into_par_iter(self) -> impl ParallelIterator<Item = (K,V)>{
+        self.0.into_par_iter().flat_map_iter(|m|m.into_inner())
+    }
+
 }
 
 impl<K: Hash + Eq + Send, V: Send, const SHARD_SIZE: usize, H: BuildHasher>

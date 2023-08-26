@@ -1,1 +1,4 @@
 /target
+.DS_Store
+/gigapan_shards/*
+/reverse_gigapan_shards/*

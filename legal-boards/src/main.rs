@@ -1,18 +1,19 @@
-use std::{fs::OpenOptions, io::BufWriter};
-
-pub mod boardgraph;
-
+use legal_boards::create_gigapan;
 fn main() -> std::io::Result<()> {
-    let boards = boardgraph::compute();
+    create_gigapan()?;
+    /*let giga = legal_boards::read_gigapan().unwrap();
+    println!("giga loaded: {}",giga.len());
 
-    let file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open("legal-boards.leb128")?;
+    let board = srs_4l::gameplay::Board::from_str(
+        "
+        GGG__GGGGG
+        GGG__GGGGG
+        GGG__GGGGG
+        GGG__GGGGG
+        "
+    );
+    println!("board: {board}, contained: {:?}", giga.get(&board));
 
-    let writer = BufWriter::new(file);
-
-    srs_4l::board_list::write(&boards, writer)?;
-
+    legal_boards::calculate::chance(giga, board);*/
     Ok(())
 }
