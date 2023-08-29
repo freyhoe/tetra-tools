@@ -13,3 +13,4 @@ smallvec = { version = "1.9.0", features = ["union"] }
 
 srs-4l = { path = "../srs-4l" }
 compute = { path = "../compute" }
+hashbrown = "0.14.0"

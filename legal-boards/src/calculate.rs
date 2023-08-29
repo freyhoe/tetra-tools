@@ -1,71 +1,61 @@
 use srs_4l::gameplay::{Shape, Board};
-use smallvec::SmallVec;
 use crate::boardgraph::FrozenGigapan;
-struct Node{
-    bag: Bag,
-    states: Vec<(Board, Option<Shape>)>
+use crate::queue::{Bag, ShapeHistory, QueueSet};
+use hashbrown::{HashMap, HashSet};
+use rayon::prelude::*;
+
+type ScanStage = HashMap<Board, QueueSet>;
+
+pub fn chance(gigapan: &FrozenGigapan, board: Board){
+    scan(gigapan, board, &[Bag::new(&Shape::ALL, 7), Bag::new(&Shape::ALL, 4)]);
+
 }
 
-impl Node{
-    fn take<'a>(&'a self, gigapan: &'a FrozenGigapan) -> impl Iterator<Item=Self> + '_{
-        self.bag.take().filter_map(move |(shape, bag)|{
-            let states : Vec<_>= self.states.iter().flat_map(|(board, _)|{
-                gigapan.get(board).unwrap()[shape as usize].iter().map(|&b|(b, None))
-            }).collect();
-            if states.len() == 0{
-                None
-            }else{
-                Some(Self{
-                    bag,
-                    states
-                })
-            }
-        })
-    }
-}
+fn scan(
+    gigapan: &FrozenGigapan,
+    start: Board,
+    bags: &[Bag],
+){
 
-struct Bag{
-    take: u8,
-    shapes: SmallVec<[Shape;7]>
-}
+    let mut prev: ScanStage = HashMap::new();
+    let first_queues = bags.first().unwrap().init_hold();
 
-impl Bag{
-    fn new() -> Self{
-        Self { take: 7, shapes:SmallVec::from(Shape::ALL)}
-    }
-    fn take(&self) -> impl Iterator<Item=(Shape, Self)> + '_{
-        (0..self.shapes.len()).map(move |idx|{
-            let mut new_shapes = self.shapes.clone();
-            let taken = new_shapes.remove(idx);
-            let s = Self{
-                take: self.take-1,
-                shapes:new_shapes
-            };
-            (taken, s)
-        })
-    }
-}
+    prev.insert(start, first_queues);
 
-pub fn chance(gigapan: FrozenGigapan, board: Board){
-    let to_place = 10-board.0.count_ones()/4;
-    let mut beam = vec![Node{
-        bag: Bag::new(),
-        states: vec![(board, None)]
-    }];
-    for depth in 0..to_place{
-        let mut new_beam = Vec::new();
-        for node in &beam{
-            let mut taken = false;
-            for child in node.take(&gigapan){
-                new_beam.push(child);
-                taken = true;
-            }
-            if !taken {
-                println!("FAIL AT DEPTH {depth}")
+    for (_stage, (bag, i)) in bags
+        .iter()//yo i forgot how this works, sorry, gg go next, <3 hmu at
+        .flat_map(|b| (0..b.count).into_iter().map(move |i| (b, i)))
+        .skip(1)
+        .enumerate()
+    {
+        let mut next: ScanStage = HashMap::new();
+
+        for (&old_board, old_queues) in prev.iter() {
+
+            for (shape, new_boards) in gigapan.get(&old_board).unwrap().into_iter().enumerate(){
+                let new_queues = bag.take(old_queues, Shape::try_from(shape as u8).unwrap(), i == 0);
+
+                if new_queues.is_empty() {
+                    continue;
+                }
+
+                for &new_board in new_boards{
+                    
+                    let next_queues = next.entry(new_board).or_default();
+                    for (&state, queues) in &new_queues {
+                        next_queues.entry(state).or_default();//.extend(queues);
+                    }
+                }
             }
         }
-        beam = new_beam;
-        println!("beam len: {}",beam.len());
+        prev = next;
+    }
+    for (board, map) in prev{
+        println!("{board}");
+
+        let mut histories : HashSet<ShapeHistory>= HashSet::new();
+        histories.extend(map.iter().flat_map(|(_,x)|x));
+        println!("min count {}", histories.len() );
     }
 
 }
