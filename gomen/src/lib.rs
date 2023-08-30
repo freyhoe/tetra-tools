@@ -186,3 +186,8 @@ pub fn decode_fumen(encoded: &str) -> String {
 
     json::to_string(&inner(encoded))
 }
+
+#[test]
+fn decode_ff(){
+    println!("{:?}", decode_fumen("v115@GhA8DeA8CeB8DeF8DeF8JeAgWHAvnltCs/1BA"));
+}

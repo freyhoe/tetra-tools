@@ -1,13 +1,14 @@
 use srs_4l::gameplay::{Shape, Board};
 use crate::boardgraph::FrozenGigapan;
-use crate::queue::{Bag, ShapeHistory, QueueSet};
+use crate::queue::{Bag, QueueState};
 use hashbrown::{HashMap, HashSet};
-use rayon::prelude::*;
+use smallvec::SmallVec;
 
-type ScanStage = HashMap<Board, QueueSet>;
+type ScanStage = HashMap<Board, (SmallVec<[QueueState; 7]>, SmallVec<[Board; 7]>)>;
 
-pub fn chance(gigapan: &FrozenGigapan, board: Board){
-    scan(gigapan, board, &[Bag::new(&Shape::ALL, 7), Bag::new(&Shape::ALL, 4)]);
+pub fn chance(gigapan: &FrozenGigapan, board: Board, bags: &[Bag]){
+
+    scan(gigapan, board, &bags);
 
 }
 
@@ -20,20 +21,20 @@ fn scan(
     let mut prev: ScanStage = HashMap::new();
     let first_queues = bags.first().unwrap().init_hold();
 
-    prev.insert(start, first_queues);
+    prev.insert(start, (first_queues, SmallVec::new()));
 
     for (_stage, (bag, i)) in bags
-        .iter()//yo i forgot how this works, sorry, gg go next, <3 hmu at
+        .iter()
         .flat_map(|b| (0..b.count).into_iter().map(move |i| (b, i)))
         .skip(1)
         .enumerate()
     {
         let mut next: ScanStage = HashMap::new();
 
-        for (&old_board, old_queues) in prev.iter() {
+        for (&old_board, (old_queues, _)) in prev.iter() {
 
             for (shape, new_boards) in gigapan.get(&old_board).unwrap().into_iter().enumerate(){
-                let new_queues = bag.take(old_queues, Shape::try_from(shape as u8).unwrap(), i == 0);
+                let new_queues = bag.take(old_queues, Shape::try_from(shape as u8).unwrap(), i == 0, true);
 
                 if new_queues.is_empty() {
                     continue;
@@ -41,21 +42,32 @@ fn scan(
 
                 for &new_board in new_boards{
                     
-                    let next_queues = next.entry(new_board).or_default();
-                    for (&state, queues) in &new_queues {
-                        next_queues.entry(state).or_default();//.extend(queues);
+                    let (queues, preds) = next.entry(new_board).or_default();
+                    for &queue in &new_queues {
+                        if !queues.contains(&queue) {
+                            queues.push(queue);
+                        }
+                    }
+                    if !preds.contains(&old_board) {
+                        preds.push(old_board);
                     }
                 }
             }
         }
         prev = next;
     }
-    for (board, map) in prev{
-        println!("{board}");
 
-        let mut histories : HashSet<ShapeHistory>= HashSet::new();
-        histories.extend(map.iter().flat_map(|(_,x)|x));
-        println!("min count {}", histories.len() );
+    let boards :  Vec<_>= prev.into_iter().collect();
+    assert!(boards.len() ==1);
+    print!("SAVE:");
+    let mut saves : HashSet<Option<Shape>> = HashSet::new();
+    saves.extend(boards[0].1.0.iter().map(|q| q.hold()));
+
+    for save in saves{
+        if let Some(save) = save{
+            print!(" {:?},",save);
+        }
     }
+    println!();
 
 }

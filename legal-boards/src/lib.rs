@@ -1,6 +1,6 @@
 pub mod boardgraph;
 pub mod calculate;
-mod queue;
+pub mod queue;
 
 use std::error::Error;
 use std::{fs::OpenOptions, io::{BufWriter, BufReader}};

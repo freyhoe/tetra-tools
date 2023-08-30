@@ -1,44 +1,151 @@
-use std::fmt::Display;
+use std::{fmt::{Display, Write}, str::FromStr};
+
+use smallvec::SmallVec;
 
 use srs_4l::gameplay::Shape;
 
-use hashbrown::{HashMap, HashSet};
-
-pub type QueueSet = HashMap<QueueState, HashSet<ShapeHistory>>;
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub struct ShapeHistory(pub u32);
-
-impl ShapeHistory{
-    pub fn new(shape:Shape) -> Self{
-        Self(shape as u32 + 1)
+pub struct QueueGenerator{
+    pub bags: Vec<Bag>,
+    pub string: String
+}
+impl QueueGenerator{
+    pub fn new()->Self{Self{bags: Vec::new(), string: "".to_owned()}}
+    pub fn add_shapes(&mut self, shapes: Vec<Shape>){
+        for shape in shapes{
+            self.string.push_str(&format!("{:?}",shape));
+            self.bags.push(Bag::new(&[shape], 1));
+        }
+        self.string.push(',');
     }
-    pub fn add_shape(&self, shape:Shape) -> Self{
-        Self((self.0 << 3) | (shape as u32 + 1))
+    pub fn add_bag(&mut self, shapes: &Vec<Shape>, count: u8){
+        let mut star = false;
+        if shapes == &Shape::ALL{
+            self.string.push('*');
+            star = true;
+        }else{
+            self.string.push('[');
+            for shape in shapes{
+                self.string.push_str(&format!("{:?}",shape));
+            }
+            self.string.push(']');
+        }
+        self.bags.push(Bag::new(shapes, count));
+
+        if count == shapes.len() as u8 && !star{
+            self.string.push('!');
+        }else{
+            self.string.push_str(&format!("p{count}"));
+        }
+        self.string.push(',');
     }
 }
-
-impl Display for ShapeHistory{
+impl Display for QueueGenerator{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut n = self.0;
-        if n == 0{
-            f.write_str("empty queue")?;
-            return Ok(())
-        }
-        f.write_str("queue:")?;
-        let mut shapes = Vec::new();
-
-        while let Some(shape) = Shape::try_from((n&7) as u8 - 1){ //weird hack, grab 3 bits as b111 we offset by 1
-            shapes.push(shape);
-            n = n >> 3;
-            if n == 0{break}
-        }
-        for i in (0..shapes.len()).rev(){
-            f.write_fmt(format_args!(" {:?}",shapes[i]))?;
-        }
+        let s = self.string.trim_end_matches(',');
+        f.write_str(s)?;
         Ok(())
     }
 }
+#[derive(Debug, PartialEq, Eq)]
+pub struct InvalidTokenError;
+
+impl FromStr for QueueGenerator{
+    type Err =InvalidTokenError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut queue = QueueGenerator::new();
+        let mut open_bracket = false;
+        let mut current_bag  : Vec<Shape> = Vec::new();
+        let s = s.replace("*", "[IJLOSTZ]");
+        let mut char_iter = s.chars().peekable();
+        let mut inverted = false;
+        while let Some(c) = char_iter.next(){
+            match c{
+                'I'| 'O'| 'T'| 'L' | 'J' | 'S' | 'Z'=>{
+                    let shape = match c{
+                        'I'=>Shape::I,
+                        'O'=>Shape::O,
+                        'T'=>Shape::T,
+                        'L'=>Shape::L,
+                        'J'=>Shape::J,
+                        'S'=>Shape::S,
+                        'Z'=>Shape::Z,
+                        _=>unreachable!()
+                    };
+                    current_bag.push(shape);
+                    if !open_bracket{
+                        if let Some(c1) = char_iter.peek(){
+                            match c1{
+                                'I'| 'O'| 'T'| 'L' | 'J' | 'S' | 'Z'=>{
+                                },
+                                _=>{
+                                    queue.add_shapes(current_bag);
+                                    current_bag = Vec::new();
+                                }
+                            }
+                        }
+                    }
+                }
+                '^'=>{
+                    if !open_bracket{
+                        return Err(InvalidTokenError)
+                    }
+                    inverted = true;
+                }
+                '['=>{
+                    if open_bracket{
+                        return Err(InvalidTokenError)
+                    }
+                    open_bracket = true;
+                }
+                ']'=>{
+                    if !open_bracket{
+                        return Err(InvalidTokenError)
+                    }
+                    open_bracket = false;
+                    if let Some(c1) = char_iter.peek(){
+                        if inverted{
+                            inverted = false;
+                            let mut new_bag = Vec::new();
+                            for shape in Shape::ALL{
+                                if !current_bag.contains(&shape){
+                                    new_bag.push(shape);
+                                }
+                            }
+                            current_bag = new_bag;
+                        }
+                        if c1 != &'p'{
+                            queue.add_bag(&current_bag, current_bag.len() as u8);
+                        }else{
+                            char_iter.next();
+                            let mut numerical_chars = Vec::new();
+                            while let Some(c1) = char_iter.peek(){
+                                if c1.is_numeric(){
+                                    let c1 = char_iter.next().unwrap();
+                                    numerical_chars.push(c1);
+                                }else{
+                                    break;
+                                }
+                            }
+                            let number : String = numerical_chars.iter().collect();
+                            match number.parse::<u8>(){
+                                Ok(num)=>{
+                                    queue.add_bag(&current_bag, num);
+                                }
+                                Err(_)=>return Err(InvalidTokenError)
+                            }
+                        }
+                        current_bag = Vec::new();
+                    }
+                }
+                _ => {
+                }
+            }
+        }
+        Ok(queue)
+    }
+}
+
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Bag {
@@ -65,62 +172,46 @@ impl Bag {
         bag
     }
 
-    pub fn init_hold(&self) -> QueueSet {
+    pub fn init_hold(&self) -> SmallVec<[QueueState; 7]> {
         let initial = QueueState(self.full);
 
         Shape::ALL
             .iter()
-            .filter_map(|&shape| {
-                match initial.swap(self, shape){
-                    Some(state) => {
-                        let mut set = HashSet::new();
-                        let history = ShapeHistory::new(shape);
-                        set.insert(history);
-                        Some((state, set))
-                    },
-                    None => None,
-                }
-            }).collect()
-
+            .filter_map(|&shape| initial.swap(self, shape))
+            .collect()
     }
 
     pub fn take(
         &self,
-        queues: &QueueSet,
+        queues: &[QueueState],
         shape: Shape,
-        is_first: bool
-    ) -> QueueSet {
-        let mut states : QueueSet = HashMap::new();
+        is_first: bool,
+        can_hold: bool,
+    ) -> SmallVec<[QueueState; 7]> {
+        let mut states = SmallVec::new();
 
-        for (queue, histories) in queues {
-            let queue = if is_first { queue.next(self) } else { *queue };
+        for &queue in queues {
+            let queue = if is_first { queue.next(self) } else { queue };
 
             if queue.hold() == Some(shape) {
                 for swap_shape in Shape::ALL {
-
                     if let Some(new) = queue.swap(self, swap_shape) {
-                        let mut new_histories = HashSet::new();
-                        for history in histories{
-                            new_histories.insert(history.add_shape(swap_shape));
+                        if !states.contains(&new) {
+                            states.push(new);
                         }
-                        let entry = states.entry(new).or_default();
-                        entry.extend(new_histories);
                     }
                 }
-            }
-            if let Some(new) = queue.take(self, shape) {
-                let mut new_histories = HashSet::new();
-                for history in histories{
-                    new_histories.insert(history.add_shape(shape));
+            } else if can_hold {
+                if let Some(new) = queue.take(self, shape) {
+                    if !states.contains(&new) {
+                        states.push(new);
+                    }
                 }
-                let entry = states.entry(new).or_default();
-                entry.extend(new_histories);
             }
         }
 
         states
     }
-
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
