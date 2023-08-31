@@ -1,84 +1,113 @@
-use std::{fmt::{Display, Write}, str::FromStr};
+use std::{
+    fmt::Display,
+    str::FromStr,
+};
 
 use smallvec::SmallVec;
 
 use srs_4l::gameplay::Shape;
 
-pub struct QueueGenerator{
+pub struct QueueGenerator {
     pub bags: Vec<Bag>,
-    pub string: String
+    pub string: String,
 }
-impl QueueGenerator{
-    pub fn new()->Self{Self{bags: Vec::new(), string: "".to_owned()}}
-    pub fn add_shapes(&mut self, shapes: Vec<Shape>){
-        for shape in shapes{
-            self.string.push_str(&format!("{:?}",shape));
+impl QueueGenerator {
+    pub fn new() -> Self {
+        Self {
+            bags: Vec::new(),
+            string: "".to_owned(),
+        }
+    }
+    pub fn add_shapes(&mut self, shapes: Vec<Shape>) {
+        for shape in shapes {
+            self.string.push_str(&format!("{:?}", shape));
             self.bags.push(Bag::new(&[shape], 1));
         }
         self.string.push(',');
     }
-    pub fn add_bag(&mut self, shapes: &Vec<Shape>, count: u8){
+    pub fn add_bag(&mut self, shapes: Vec<Shape>, count: Option<u8>, inverted: bool) {
+
+        let new_shapes = if inverted{ 
+            let mut new_shapes = Vec::new();
+            for shape in Shape::ALL {
+                if !shapes.contains(&shape) {
+                    new_shapes.push(shape);
+                }
+            }
+            new_shapes
+        }else{
+            shapes
+        };
+        let count = count.unwrap_or(new_shapes.len() as u8);
+        self.bags.push(Bag::new(&new_shapes, count));
+
         let mut star = false;
-        if shapes == &Shape::ALL{
+        if new_shapes == &Shape::ALL {
             self.string.push('*');
             star = true;
-        }else{
+        } else {
             self.string.push('[');
-            for shape in shapes{
-                self.string.push_str(&format!("{:?}",shape));
+            for shape in &new_shapes {
+                self.string.push_str(&format!("{:?}", shape));
             }
             self.string.push(']');
         }
-        self.bags.push(Bag::new(shapes, count));
 
-        if count == shapes.len() as u8 && !star{
+        if count == new_shapes.len() as u8 && !star {
             self.string.push('!');
-        }else{
+        } else if count != 1{
             self.string.push_str(&format!("p{count}"));
         }
         self.string.push(',');
     }
 }
-impl Display for QueueGenerator{
+impl Display for QueueGenerator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = self.string.trim_end_matches(',');
         f.write_str(s)?;
         Ok(())
     }
 }
+
+#[test]
+fn queuegen_string(){
+    let input_str = "[^]p3**p1[^JLT]p2JLT[SZ]p2";
+    let queue = QueueGenerator::from_str(input_str).unwrap();
+    println!("input_str: {input_str}, cleaned: {}", queue)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct InvalidTokenError;
 
-impl FromStr for QueueGenerator{
-    type Err =InvalidTokenError;
+impl FromStr for QueueGenerator {
+    type Err = InvalidTokenError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut queue = QueueGenerator::new();
         let mut open_bracket = false;
-        let mut current_bag  : Vec<Shape> = Vec::new();
+        let mut current_bag: Vec<Shape> = Vec::new();
         let s = s.replace("*", "[IJLOSTZ]");
         let mut char_iter = s.chars().peekable();
         let mut inverted = false;
-        while let Some(c) = char_iter.next(){
-            match c{
-                'I'| 'O'| 'T'| 'L' | 'J' | 'S' | 'Z'=>{
-                    let shape = match c{
-                        'I'=>Shape::I,
-                        'O'=>Shape::O,
-                        'T'=>Shape::T,
-                        'L'=>Shape::L,
-                        'J'=>Shape::J,
-                        'S'=>Shape::S,
-                        'Z'=>Shape::Z,
-                        _=>unreachable!()
+        while let Some(c) = char_iter.next() {
+            match c {
+                'I' | 'O' | 'T' | 'L' | 'J' | 'S' | 'Z' => {
+                    let shape = match c {
+                        'I' => Shape::I,
+                        'O' => Shape::O,
+                        'T' => Shape::T,
+                        'L' => Shape::L,
+                        'J' => Shape::J,
+                        'S' => Shape::S,
+                        'Z' => Shape::Z,
+                        _ => unreachable!(),
                     };
                     current_bag.push(shape);
-                    if !open_bracket{
-                        if let Some(c1) = char_iter.peek(){
-                            match c1{
-                                'I'| 'O'| 'T'| 'L' | 'J' | 'S' | 'Z'=>{
-                                },
-                                _=>{
+                    if !open_bracket {
+                        if let Some(c1) = char_iter.peek() {
+                            match c1 {
+                                'I' | 'O' | 'T' | 'L' | 'J' | 'S' | 'Z' => {}
+                                _ => {
                                     queue.add_shapes(current_bag);
                                     current_bag = Vec::new();
                                 }
@@ -86,66 +115,60 @@ impl FromStr for QueueGenerator{
                         }
                     }
                 }
-                '^'=>{
-                    if !open_bracket{
-                        return Err(InvalidTokenError)
+                '^' => {
+                    if !open_bracket {
+                        return Err(InvalidTokenError);
                     }
                     inverted = true;
                 }
-                '['=>{
-                    if open_bracket{
-                        return Err(InvalidTokenError)
+                '[' => {
+                    if open_bracket {
+                        return Err(InvalidTokenError);
                     }
                     open_bracket = true;
                 }
-                ']'=>{
-                    if !open_bracket{
-                        return Err(InvalidTokenError)
+                ']' => {
+                    if !open_bracket {
+                        return Err(InvalidTokenError);
                     }
                     open_bracket = false;
-                    if let Some(c1) = char_iter.peek(){
-                        if inverted{
-                            inverted = false;
-                            let mut new_bag = Vec::new();
-                            for shape in Shape::ALL{
-                                if !current_bag.contains(&shape){
-                                    new_bag.push(shape);
-                                }
-                            }
-                            current_bag = new_bag;
-                        }
-                        if c1 != &'p'{
-                            queue.add_bag(&current_bag, current_bag.len() as u8);
-                        }else{
+                    if let Some(c1) = char_iter.peek() {
+                        if c1 != &'p' {
+                            queue.add_bag(current_bag, Some(1), inverted);
+                        } else if c1==&'!'{
+                            queue.add_bag(current_bag, None, inverted);
+                        }else {
                             char_iter.next();
                             let mut numerical_chars = Vec::new();
-                            while let Some(c1) = char_iter.peek(){
-                                if c1.is_numeric(){
+                            while let Some(c1) = char_iter.peek() {
+                                if c1.is_numeric() {
                                     let c1 = char_iter.next().unwrap();
                                     numerical_chars.push(c1);
-                                }else{
+                                } else {
                                     break;
                                 }
                             }
-                            let number : String = numerical_chars.iter().collect();
-                            match number.parse::<u8>(){
-                                Ok(num)=>{
-                                    queue.add_bag(&current_bag, num);
+                            let number: String = numerical_chars.iter().collect();
+                            match number.parse::<u8>() {
+                                Ok(num) => {
+                                    queue.add_bag(current_bag, Some(num), inverted);
                                 }
-                                Err(_)=>return Err(InvalidTokenError)
+                                Err(_) => return Err(InvalidTokenError),
                             }
                         }
-                        current_bag = Vec::new();
+
+                    }else{
+                        queue.add_bag(current_bag, Some(1), inverted);
                     }
+                    current_bag = Vec::new();
+                    inverted = false;
                 }
-                _ => {
-                }
+                _ => {}
             }
         }
         Ok(queue)
     }
 }
-
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Bag {
