@@ -71,7 +71,7 @@ impl Display for QueueGenerator {
 
 #[test]
 fn queuegen_string(){
-    let input_str = "[^]p3**p1[^JLT]p2JLT[SZ]p2";
+    let input_str = "[^]p3**p1[^JLT]p2JLT[SZ]!";
     let queue = QueueGenerator::from_str(input_str).unwrap();
     println!("input_str: {input_str}, cleaned: {}", queue)
 }
@@ -133,11 +133,7 @@ impl FromStr for QueueGenerator {
                     }
                     open_bracket = false;
                     if let Some(c1) = char_iter.peek() {
-                        if c1 != &'p' {
-                            queue.add_bag(current_bag, Some(1), inverted);
-                        } else if c1==&'!'{
-                            queue.add_bag(current_bag, None, inverted);
-                        }else {
+                        if c1 == &'p' {
                             char_iter.next();
                             let mut numerical_chars = Vec::new();
                             while let Some(c1) = char_iter.peek() {
@@ -155,6 +151,10 @@ impl FromStr for QueueGenerator {
                                 }
                                 Err(_) => return Err(InvalidTokenError),
                             }
+                        } else if c1==&'!'{
+                            queue.add_bag(current_bag, None, inverted);
+                        }else {
+                            queue.add_bag(current_bag, Some(1), inverted);
                         }
 
                     }else{

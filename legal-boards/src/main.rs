@@ -14,7 +14,7 @@ fn main() -> std::io::Result<()> {
     );*/
     let board = srs_4l::gameplay::Board(0);
 
-    let queue = legal_boards::queue::QueueGenerator::from_str("[^JIT],*p7").unwrap();
+    let queue = legal_boards::queue::QueueGenerator::from_str("[^JIT]!,*!").unwrap();
 
     println!("benching:{board} {}", queue.string);
     let instant = Instant::now();
