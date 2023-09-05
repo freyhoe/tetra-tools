@@ -41,8 +41,9 @@ impl QueueGenerator {
         }else{
             shapes
         };
-        let count = count.unwrap_or(new_shapes.len() as u8);
-        self.total_queues *= ((8-count as usize)..=7).product::<usize>();
+        let shape_len = new_shapes.len();
+        let count = count.unwrap_or(shape_len as u8);
+        self.total_queues *= ((shape_len+1-count as usize)..=shape_len).product::<usize>();
         self.bags.push(Bag::new(&new_shapes, count));
 
         let mut star = false;
@@ -266,7 +267,7 @@ impl Bag {
     ) -> HashMap<QueueState, HashSet<Queue>> {
         let mut states = HashMap::new();
         for (&queue, histories) in queues {
-            let queue = if is_first { queue.next(self) } else { queue };
+            let queue = if is_first {queue.next(self) } else { queue };
 
             if queue.hold() == Some(shape) {
                 for swap_shape in Shape::ALL {

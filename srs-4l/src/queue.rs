@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::BTreeSet, iter::FromIterator};
+use std::{borrow::Borrow, collections::BTreeSet, iter::FromIterator, fmt::Display};
 
 use crate::gameplay::Shape;
 
@@ -164,6 +164,17 @@ impl Queue {
     pub fn reverse(self) -> Queue {
         let x = self.natural_order_key();
         Queue(x >> (x.trailing_zeros() / 3 * 3))
+    }
+}
+
+impl Display for Queue{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[")?;
+        for shape in self.into_iter(){
+            f.write_fmt(format_args!("{:?}",shape))?;
+        }
+        f.write_str("]")?;
+        Ok(())
     }
 }
 
