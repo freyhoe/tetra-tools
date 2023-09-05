@@ -3,19 +3,22 @@ use std::{
     str::FromStr,
 };
 
+use hashbrown::{HashMap, HashSet};
 use smallvec::SmallVec;
 
-use srs_4l::gameplay::Shape;
+use srs_4l::{gameplay::Shape, queue::Queue};
 
 pub struct QueueGenerator {
     pub bags: Vec<Bag>,
     pub string: String,
+    pub total_queues: usize
 }
 impl QueueGenerator {
     pub fn new() -> Self {
         Self {
             bags: Vec::new(),
             string: "".to_owned(),
+            total_queues: 1
         }
     }
     pub fn add_shapes(&mut self, shapes: Vec<Shape>) {
@@ -39,6 +42,7 @@ impl QueueGenerator {
             shapes
         };
         let count = count.unwrap_or(new_shapes.len() as u8);
+        self.total_queues *= ((8-count as usize)..=7).product::<usize>();
         self.bags.push(Bag::new(&new_shapes, count));
 
         let mut star = false;
@@ -103,7 +107,7 @@ impl FromStr for QueueGenerator {
                         _ => unreachable!(),
                     };
                     current_bag.push(shape);
-                    if !open_bracket {
+                    if !open_bracket{
                         if let Some(c1) = char_iter.peek() {
                             match c1 {
                                 'I' | 'O' | 'T' | 'L' | 'J' | 'S' | 'Z' => {}
@@ -112,6 +116,10 @@ impl FromStr for QueueGenerator {
                                     current_bag = Vec::new();
                                 }
                             }
+                        }else{
+                            queue.add_shapes(current_bag);
+                            current_bag = Vec::new();
+
                         }
                     }
                 }
@@ -203,7 +211,6 @@ impl Bag {
             .filter_map(|&shape| initial.swap(self, shape))
             .collect()
     }
-
     pub fn take(
         &self,
         queues: &[QueueState],
@@ -235,7 +242,60 @@ impl Bag {
 
         states
     }
+
+    pub fn init_hold_with_history(&self) -> HashMap<QueueState, HashSet<Queue>> {
+        let initial = QueueState(self.full);
+
+        Shape::ALL
+            .iter()
+            .filter_map(|&shape| initial.swap(self, shape))
+            .map(|s|{
+                let mut set = HashSet::new();
+                let q = Queue::empty();
+                set.insert(q.push_first(s.hold().unwrap()));
+                (s, set)
+            })
+            .collect()
+    }
+    pub fn take_with_history(
+        &self,
+        queues: &HashMap<QueueState, HashSet<Queue>>,
+        shape: Shape,
+        is_first: bool,
+        can_hold: bool,
+    ) -> HashMap<QueueState, HashSet<Queue>> {
+        let mut states = HashMap::new();
+        for (&queue, histories) in queues {
+            let queue = if is_first { queue.next(self) } else { queue };
+
+            if queue.hold() == Some(shape) {
+                for swap_shape in Shape::ALL {
+                    if let Some(new) = queue.swap(self, swap_shape) {
+                        let mut new_histories = HashSet::new();
+                        for history in histories{
+                            new_histories.insert(history.push_first(swap_shape));
+                        }
+                        let entry: &mut HashSet<Queue> = states.entry(new).or_default();
+                        entry.extend(new_histories);
+                    }
+                }
+            } else if can_hold {
+                if let Some(new) = queue.take(self, shape) {
+                    let mut new_histories = HashSet::new();
+                    for history in histories{
+                        new_histories.insert(history.push_first(shape));
+                    }
+                    let entry = states.entry(new).or_default();
+                    entry.extend(new_histories);
+                }
+            }
+        }
+
+        states
+    }
 }
+
+
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct QueueState(pub u16);
