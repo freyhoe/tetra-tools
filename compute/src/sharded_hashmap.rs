@@ -115,9 +115,11 @@ impl<K: Hash + Eq + Send, V: Send, const SHARD_SIZE: usize, H: BuildHasher>
         self.0.into_iter().map(|m|{m.into_inner()}).flatten()
     }
 
+    /// converts this map into a parallel iterator, do not freeze then convert
     pub fn into_par_iter(self) -> impl ParallelIterator<Item = (K,V)>{
         self.0.into_par_iter().flat_map_iter(|m|m.into_inner())
     }
+    
 
 }
 

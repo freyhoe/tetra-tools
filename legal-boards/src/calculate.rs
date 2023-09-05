@@ -1,7 +1,11 @@
+use std::io::Write;
+
+use rayon::prelude::ParallelIterator;
 use srs_4l::gameplay::{Shape, Board};
 use crate::boardgraph::FrozenGigapan;
 use crate::queue::{Bag, QueueState};
 use hashbrown::{HashMap, HashSet};
+use compute::ShardedHashMap;
 use smallvec::SmallVec;
 
 type ScanStage = HashMap<Board, (SmallVec<[QueueState; 7]>, SmallVec< [Board; 7]>)>;
@@ -43,7 +47,7 @@ fn transverse_queues(gigapan: &FrozenGigapan, culled: &HashSet<Board>, board: Bo
     println!("culled boards grabbed {}", culled.len());
     print!("chance start: ");
 
-    let mut prev = HashMap::new();
+    let mut prev: ShardedHashMap<Board, HashMap<QueueState, HashSet<srs_4l::queue::Queue>>, 20, nohash::BuildNoHashHasher<u64>> = ShardedHashMap::new();
     let first_queues = bags.first().unwrap().init_hold_with_history();
 
     prev.insert(board, first_queues);
@@ -53,14 +57,14 @@ fn transverse_queues(gigapan: &FrozenGigapan, culled: &HashSet<Board>, board: Bo
         .skip(1)
         .enumerate()
     {
-        let mut next = HashMap::new();
+        let mut next = ShardedHashMap::new();
 
-        for (&old_board, old_queues) in prev.iter() {
+        prev.into_par_iter().for_each(|(old_board, old_queues)|{
 
             for (shape, new_boards) in gigapan.get(&old_board).unwrap().into_iter().enumerate(){
                 let shape = Shape::try_from(shape as u8).unwrap();
 
-                let new_queues = bag.take_with_history(old_queues, shape, i==0, true);
+                let new_queues = bag.take_with_history(&old_queues, shape, i==0, true);
                 
                 if new_queues.is_empty() {
                     continue;
@@ -68,16 +72,18 @@ fn transverse_queues(gigapan: &FrozenGigapan, culled: &HashSet<Board>, board: Bo
 
                 for &new_board in new_boards{
                     if !culled.contains(&new_board){continue;}
-                    
-                    let next_queues: &mut HashMap<QueueState, HashSet<srs_4l::queue::Queue>> = next.entry(new_board).or_default();
+                    let mut lock = next.get_shard_guard(&new_board);
+
+                    let next_queues: &mut HashMap<QueueState, HashSet<srs_4l::queue::Queue>> = lock.entry(new_board).or_default();
                     for (&state, queues) in &new_queues {
                         next_queues.entry(state).or_default().extend(queues);
                     }
 
                 }
             }
-        }
+        });
         print!("b: {}", next.len());
+        std::io::stdout().flush().unwrap();
 
         prev = next;
     }
