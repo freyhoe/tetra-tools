@@ -1,4 +1,4 @@
-use std::{time::Instant, str::FromStr};
+use std::str::FromStr;
 use legal_boards::create_gigapan;
 use srs_4l::gameplay::Board;
 
@@ -19,12 +19,9 @@ fn main() -> std::io::Result<()> {
 
 
 
-    println!("running:{board} {},\n total queues: {}", queue.string.trim_end_matches(','), queue.total_queues);
-    let instant = Instant::now();
-    
+    println!("running:{board} {},\n total queues: {}", queue.string.trim_end_matches(','), queue.total_queues);    
     legal_boards::calculate::chance(giga, board, &queue.bags, queue.total_queues);
-    
-    println!("{}ms", instant.elapsed().as_millis());
+
     Ok(())
 }
 

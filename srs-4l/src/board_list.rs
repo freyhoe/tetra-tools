@@ -42,7 +42,7 @@ pub fn read(mut r: impl Read) -> io::Result<Vec<Board>> {
 }
 
 
-pub fn write_graph(nodes: &[(Board, SmallVec<[SmallVec<[Board;6]>;7]>)], mut w: impl Write) -> io::Result<()>{
+pub fn write_graph(nodes: &[(Board, [SmallVec<[Board;6]>;7])], mut w: impl Write) -> io::Result<()>{
     leb128::write::unsigned(&mut w, nodes.len() as u64)?;
     for (board, children) in nodes{
         leb128::write::unsigned(&mut w, board.0)?;
@@ -57,20 +57,20 @@ pub fn write_graph(nodes: &[(Board, SmallVec<[SmallVec<[Board;6]>;7]>)], mut w: 
     Ok(())
 }
 
-pub fn read_graph(mut r: impl Read)->io::Result<Vec<(Board, SmallVec<[SmallVec<[Board;6]>;7]>)>>{
+pub fn read_graph(mut r: impl Read)->io::Result<Vec<(Board, [SmallVec<[Board;6]>;7])>>{
     let len = leb128::read::unsigned(&mut r).map_err(to_io_error)? as usize;
     let mut gigavec = Vec::new();
     for _ in 0..len{
         let current = leb128::read::unsigned(&mut r).map_err(to_io_error).unwrap();
-        let mut pieces = SmallVec::new();
-        for _ in 0..7{
+        let mut pieces: [SmallVec<[Board;6]>;7] = Default::default();
+        for i in 0..7{
             let mut boards : SmallVec<[Board;6]> = SmallVec::new();
             let len = leb128::read::unsigned(&mut r).map_err(to_io_error).unwrap();
             for _ in 0..len{
                 let new = current + leb128::read::unsigned(&mut r).map_err(to_io_error).unwrap();
                 boards.push(Board(new));
             }
-            pieces.push(boards);
+            pieces[i]=boards;
         }
         gigavec.push((Board(current), pieces));
     }

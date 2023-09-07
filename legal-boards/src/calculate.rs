@@ -3,15 +3,19 @@ use std::io::Write;
 use rayon::prelude::ParallelIterator;
 use srs_4l::gameplay::{Shape, Board};
 use crate::boardgraph::FrozenGigapan;
-use crate::queue::{Bag, QueueState};
+use crate::queue::{Bag, QueueState, QueueMap};
 use hashbrown::{HashMap, HashSet};
 use compute::ShardedHashMap;
 use smallvec::SmallVec;
 
+
 type ScanStage = HashMap<Board, (SmallVec<[QueueState; 7]>, SmallVec< [Board; 7]>)>;
 
+use std::time::Instant;
 
 pub fn chance(gigapan: FrozenGigapan, board: Board, bags: &[Bag], total_queues: usize){
+    let instant = Instant::now();
+
     let piece_count: usize = bags.iter().map(|b| b.count as usize).sum();
     let new_mino_count = piece_count as u32 * 4;
     if board.0.count_ones() + new_mino_count - 4 != 40{
@@ -39,15 +43,10 @@ pub fn chance(gigapan: FrozenGigapan, board: Board, bags: &[Bag], total_queues: 
             }
         }
     }
-
-    transverse_queues(&gigapan, &culled, board, bags, total_queues)
-}
-
-fn transverse_queues(gigapan: &FrozenGigapan, culled: &HashSet<Board>, board: Board, bags: &[Bag], total_queues: usize){
     println!("culled boards grabbed {}", culled.len());
     print!("chance start: ");
 
-    let mut prev: ShardedHashMap<Board, HashMap<QueueState, HashSet<srs_4l::queue::Queue>>, 20, nohash::BuildNoHashHasher<u64>> = ShardedHashMap::new();
+    let mut prev: ShardedHashMap<Board, QueueMap, 20, nohash::BuildNoHashHasher<u64>> = ShardedHashMap::new();
     let first_queues = bags.first().unwrap().init_hold_with_history();
 
     prev.insert(board, first_queues);
@@ -74,7 +73,7 @@ fn transverse_queues(gigapan: &FrozenGigapan, culled: &HashSet<Board>, board: Bo
                     if !culled.contains(&new_board){continue;}
                     let mut lock = next.get_shard_guard(&new_board);
 
-                    let next_queues: &mut HashMap<QueueState, HashSet<srs_4l::queue::Queue>> = lock.entry(new_board).or_default();
+                    let next_queues: &mut QueueMap = lock.entry(new_board).or_default();
                     for (&state, queues) in &new_queues {
                         next_queues.entry(state).or_default().extend(queues);
                     }
@@ -98,8 +97,10 @@ fn transverse_queues(gigapan: &FrozenGigapan, culled: &HashSet<Board>, board: Bo
     }
     println!("chance queues: {}/{total_queues}", map.len());
     println!("{}%", map.len() as f32/total_queues as f32 * 100.0);
-    
+
+    println!("computed in: {:?}", instant.elapsed());
 }
+
 
 
 fn build_path(

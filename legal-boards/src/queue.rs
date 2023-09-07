@@ -3,10 +3,13 @@ use std::{
     str::FromStr,
 };
 
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashSet;
 use smallvec::SmallVec;
 
 use srs_4l::{gameplay::Shape, queue::Queue};
+use nohash::IntMap;
+pub type QueueMap = IntMap<QueueState, HashSet<Queue>>;
+
 
 pub struct QueueGenerator {
     pub bags: Vec<Bag>,
@@ -244,7 +247,7 @@ impl Bag {
         states
     }
 
-    pub fn init_hold_with_history(&self) -> HashMap<QueueState, HashSet<Queue>> {
+    pub fn init_hold_with_history(&self) -> QueueMap {
         let initial = QueueState(self.full);
 
         Shape::ALL
@@ -260,12 +263,12 @@ impl Bag {
     }
     pub fn take_with_history(
         &self,
-        queues: &HashMap<QueueState, HashSet<Queue>>,
+        queues: &QueueMap,
         shape: Shape,
         is_first: bool,
         can_hold: bool,
-    ) -> HashMap<QueueState, HashSet<Queue>> {
-        let mut states = HashMap::new();
+    ) -> QueueMap {
+        let mut states = IntMap::with_capacity_and_hasher(7, nohash::BuildNoHashHasher::default());
         for (&queue, histories) in queues {
             let queue = if is_first {queue.next(self) } else { queue };
 
@@ -298,8 +301,16 @@ impl Bag {
 
 
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct QueueState(pub u16);
+
+impl std::hash::Hash for QueueState {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_u16(self.0)
+    }
+}
+
+impl nohash::IsEnabled for QueueState {}
 
 impl QueueState {
     pub fn hold(self) -> Option<Shape> {

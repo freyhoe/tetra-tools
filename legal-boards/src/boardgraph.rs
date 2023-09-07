@@ -17,8 +17,8 @@ type NoHashBuilder = nohash::BuildNoHashHasher<u64>;
 type Map = ShardedHashMap<Board, SmallVec<[Board; 6]>, 20, NoHashBuilder>;
 type GraphMap = ShardedHashMap<Board, SmallVec<[(Board, Shape); 6]>, 20, NoHashBuilder>;
 
-pub type Gigapan = ShardedHashMap<Board, SmallVec<[SmallVec<[Board;6]>;7]>, 20, NoHashBuilder>;
-pub type FrozenGigapan = FrozenMap<Board, SmallVec<[SmallVec<[Board;6]>;7]>, 20, NoHashBuilder>;
+pub type Gigapan = ShardedHashMap<Board, [SmallVec<[Board;6]>;7], 20, NoHashBuilder>;
+pub type FrozenGigapan = FrozenMap<Board, [SmallVec<[Board;6]>;7], 20, NoHashBuilder>;
 
 type Set = ShardedHashMap<Board, (), 20, NoHashBuilder>;
 
@@ -106,11 +106,6 @@ pub fn compute() -> Vec<Board> {
     all_boards
 }
 
-fn gen_path_vec()->SmallVec<[SmallVec<[Board; 6]>; 7]>{
-    let mut pieces = SmallVec::new();
-    pieces.resize_with(7, SmallVec::new);
-    pieces
-}
 
 pub fn compute_gigapan() -> (Gigapan, Gigapan){
     let mut stages: Vec<GraphMap> = Vec::new();
@@ -187,14 +182,14 @@ pub fn compute_gigapan() -> (Gigapan, Gigapan){
                 let preds = stage.get(&board).unwrap();
 
                 let mut shard = reversemap.get_shard_guard(&board);
-                let entry = shard.entry(board).or_insert_with(gen_path_vec);
+                let entry = shard.entry(board).or_insert_with(Default::default);
                 preds.iter().for_each(|&(parent, shape)|{
                     entry[shape as usize].push(parent);
                 });
 
                 preds.iter().for_each(|&(parent, shape)|{
                     let mut shard = graphmap.get_shard_guard(&parent);
-                    let entry = shard.entry(parent).or_insert_with(gen_path_vec);
+                    let entry = shard.entry(parent).or_insert_with(Default::default);
                     entry[shape as usize].push(board);
                 });
 
