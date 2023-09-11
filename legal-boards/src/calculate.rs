@@ -1,6 +1,7 @@
-use std::io::Write;
+use std::io::{Write, BufWriter};
 
 use rayon::prelude::ParallelIterator;
+use rayon::slice::ParallelSliceMut;
 use srs_4l::gameplay::{Shape, Board};
 use crate::boardgraph::FrozenGigapan;
 use crate::queue::{Bag, QueueState, QueueMap};
@@ -89,7 +90,7 @@ pub fn chance(gigapan: FrozenGigapan, board: Board, bags: &[Bag], total_queues: 
     println!();
     let queues = prev.into_iter().collect::<Vec<_>>();
     assert!(queues.len()==1);
-    let mut map = HashSet::new();
+    let mut map = HashSet::with_capacity(total_queues);
     for (_b, q) in queues{
         for q in q.into_values(){
             map.extend(q);
@@ -99,6 +100,19 @@ pub fn chance(gigapan: FrozenGigapan, board: Board, bags: &[Bag], total_queues: 
     println!("{}%", map.len() as f32/total_queues as f32 * 100.0);
 
     println!("computed in: {:?}", instant.elapsed());
+
+    let mut queues : Vec<_>= map.into_iter().collect();
+    queues.par_sort_unstable_by_key(|q| q.natural_order_key());
+
+    let file = std::fs::File::create("passQueues.txt").unwrap();
+    let mut buf_writer = BufWriter::new(file);
+
+    for q in queues{
+        buf_writer.write_fmt(format_args!("{q}\n")).unwrap();
+    }
+    buf_writer.flush().unwrap();
+
+
 }
 
 
