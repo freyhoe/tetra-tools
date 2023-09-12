@@ -6,7 +6,8 @@ use std::{
 use hashbrown::HashSet;
 use smallvec::SmallVec;
 
-use srs_4l::{gameplay::Shape, queue::Queue};
+use srs_4l::gameplay::Shape;
+use crate::big_queue::Queue;
 use nohash::IntMap;
 pub type QueueMap = IntMap<QueueState, HashSet<Queue>>;
 
