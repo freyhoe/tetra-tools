@@ -17,8 +17,8 @@ type NoHashBuilder = nohash::BuildNoHashHasher<u64>;
 type Map = ShardedHashMap<Board, SmallVec<[Board; 6]>, 20, NoHashBuilder>;
 type GraphMap = ShardedHashMap<Board, SmallVec<[(Board, Shape); 6]>, 20, NoHashBuilder>;
 
-pub type Gigapan = ShardedHashMap<Board, [SmallVec<[Board;6]>;7], 20, NoHashBuilder>;
-pub type FrozenGigapan = FrozenMap<Board, [SmallVec<[Board;6]>;7], 20, NoHashBuilder>;
+pub type Gigapan = ShardedHashMap<Board, [Vec<Board>;7], 20, NoHashBuilder>;
+pub type FrozenGigapan = FrozenMap<Board, [Vec<Board>;7], 20, NoHashBuilder>;
 
 type Set = ShardedHashMap<Board, (), 20, NoHashBuilder>;
 
