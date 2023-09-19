@@ -1,5 +1,5 @@
 use std::{
-    fmt::Display,
+    fmt::{Display, Write},
     str::FromStr,
 };
 
@@ -12,25 +12,36 @@ use nohash::IntMap;
 pub type QueueMap = IntMap<QueueState, HashSet<Queue>>;
 
 
+struct BagInput{
+    shapes: Vec<Shape>,
+    count: u8,
+    ordered: bool
+}
 pub struct QueueGenerator {
-    pub bags: Vec<Bag>,
-    pub string: String,
-    pub total_queues: usize
+    bags: Vec<BagInput>,
+    total_queues: usize
 }
 impl QueueGenerator {
     pub fn new() -> Self {
         Self {
             bags: Vec::new(),
-            string: "".to_owned(),
             total_queues: 1
         }
     }
+    pub fn piece_count(&self)->usize{
+        self.bags.iter().map(|input|input.count as usize).sum()
+    }
+    pub fn queue_count(&self)->usize{
+        self.total_queues
+    }
+    pub fn get_bags(&self) -> Vec<Bag>{
+        self.bags.iter().map(|input|Bag::new(&input.shapes, input.count)).collect()
+    }
+    pub fn invert_queues(&self, sorted_queues: &[Queue]){
+        
+    }
     pub fn add_shapes(&mut self, shapes: Vec<Shape>) {
-        for shape in shapes {
-            self.string.push_str(&format!("{:?}", shape));
-            self.bags.push(Bag::new(&[shape], 1));
-        }
-        self.string.push(',');
+        self.bags.push(BagInput { shapes, count: 1, ordered: true })
     }
     pub fn add_bag(&mut self, shapes: Vec<Shape>, count: Option<u8>, inverted: bool) {
 
@@ -48,39 +59,46 @@ impl QueueGenerator {
         let shape_len = new_shapes.len();
         let count = count.unwrap_or(shape_len as u8);
         self.total_queues *= ((shape_len+1-count as usize)..=shape_len).product::<usize>();
-        self.bags.push(Bag::new(&new_shapes, count));
-
-        let mut star = false;
-        if new_shapes == &Shape::ALL {
-            self.string.push('*');
-            star = true;
-        } else {
-            self.string.push('[');
-            for shape in &new_shapes {
-                self.string.push_str(&format!("{:?}", shape));
-            }
-            self.string.push(']');
-        }
-
-        if count == new_shapes.len() as u8 && !star {
-            self.string.push('!');
-        } else if count != 1{
-            self.string.push_str(&format!("p{count}"));
-        }
-        self.string.push(',');
+        self.bags.push(BagInput{shapes: new_shapes, count, ordered: false});
     }
 }
-impl Display for QueueGenerator {
+impl Display for QueueGenerator{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = self.string.trim_end_matches(',');
-        f.write_str(s)?;
+        let mut iter = self.bags.iter().peekable();
+        while let Some(inputs) = iter.next(){
+            let star = inputs.shapes == &Shape::ALL;
+            if star{
+                f.write_char('*')?;
+            }else{
+                if !inputs.ordered{
+                    f.write_char('[')?;
+                }
+                for shape in inputs.shapes.iter(){
+                    f.write_fmt(format_args!("{:?}",shape))?;
+                }
+                if !inputs.ordered{
+                    f.write_char(']')?;
+                }
+            }
+            if !inputs.ordered{
+                if inputs.count == inputs.shapes.len() as u8 && !star{
+                    f.write_char('!')?;
+                }else if inputs.count>1{
+                    f.write_fmt(format_args!("p{}", inputs.count))?;
+                }
+            }
+            if let Some(_)= iter.peek(){
+                f.write_char(',')?;
+
+            }
+        }
         Ok(())
     }
 }
 
 #[test]
 fn queuegen_string(){
-    let input_str = "[^]p3**p1[^JLT]p2JLT[SZ]!";
+    let input_str = "[^]p3**p7*p1[^JLT]p2JLT[SZ]!";
     let queue = QueueGenerator::from_str(input_str).unwrap();
     println!("input_str: {input_str}, cleaned: {}", queue)
 }
@@ -160,6 +178,9 @@ impl FromStr for QueueGenerator {
                             let number: String = numerical_chars.iter().collect();
                             match number.parse::<u8>() {
                                 Ok(num) => {
+                                    if num==0{
+                                        return Err(InvalidTokenError)
+                                    }
                                     queue.add_bag(current_bag, Some(num), inverted);
                                 }
                                 Err(_) => return Err(InvalidTokenError),

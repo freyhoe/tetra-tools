@@ -19,8 +19,8 @@ fn main() -> std::io::Result<()> {
 
 
 
-    println!("running:{board} {},\n total queues: {}", queue.string.trim_end_matches(','), queue.total_queues);    
-    legal_boards::calculate::chance(giga, board, &queue.bags, queue.total_queues);
+    println!("running:{board} {}", queue);
+    legal_boards::calculate::chance(giga, board, &queue.get_bags(), queue.queue_count());
 
     Ok(())
 }
