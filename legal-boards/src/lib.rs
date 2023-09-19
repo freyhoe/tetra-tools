@@ -15,16 +15,15 @@ pub fn create_gigapan() -> std::io::Result<()> {
     std::fs::DirBuilder::new().recursive(true).create("./gigapan_shards")?;
 
     let instant = Instant::now();
-    let (gigapan, reversepan) = boardgraph::compute_gigapan();
+    let gigapan = boardgraph::compute_gigapan();
     println!("generated gigapan in {}s", instant.elapsed().as_secs());
 
     write_pan("gigapan_shards", gigapan)?;
-    write_pan("reverse_gigapan_shards", reversepan)?;
 
     Ok(())
 }
 //impl Iterator<Item=(usize, impl Iterator<Item = (Board, SmallVec<[SmallVec<[Board;6]>;7]>)>)>
-fn write_pan(path:&str, mut gigapan: Gigapan) -> std::io::Result<()>{
+fn write_pan(path:&str, gigapan: Gigapan) -> std::io::Result<()>{
     let instant = Instant::now();
     let gigalen = gigapan.len();
     let shards : Vec<_> = gigapan.into_par_iter().collect();
@@ -48,6 +47,7 @@ fn write_pan(path:&str, mut gigapan: Gigapan) -> std::io::Result<()>{
 }
 
 pub fn read_gigapan(path: &str) -> std::result::Result<Gigapan, Box<dyn Error>>{
+    let instant = Instant::now();
     let gigapan = Gigapan::new();
     let paths : Vec<_> = std::fs::read_dir(path)?.filter_map(|entry|{
         if let Ok(entry) = entry{
@@ -64,5 +64,6 @@ pub fn read_gigapan(path: &str) -> std::result::Result<Gigapan, Box<dyn Error>>{
             gigapan.insert(k, v);
         }
     });
+    println!("read gigapan in {}s", instant.elapsed().as_secs());
     Ok(gigapan)
 }

@@ -3,7 +3,6 @@ use legal_boards::create_gigapan;
 use srs_4l::gameplay::Board;
 
 fn main() -> std::io::Result<()> {
-
     let args : Vec<_>= std::env::args().collect();
 
     let board = Board(decode_fumen(&args[1]).expect("valid fumen"));
@@ -13,7 +12,7 @@ fn main() -> std::io::Result<()> {
         println!("you do not have gigapan already build, creating gigapan...");
         create_gigapan().unwrap();
         legal_boards::read_gigapan("./gigapan_shards").unwrap()
-    }).freeze();
+    });
 
     println!("giga loaded: {}",giga.len());
 

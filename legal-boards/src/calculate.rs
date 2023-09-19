@@ -3,7 +3,7 @@ use std::io::{Write, BufWriter};
 use rayon::prelude::ParallelIterator;
 use rayon::slice::ParallelSliceMut;
 use srs_4l::gameplay::{Shape, Board};
-use crate::boardgraph::FrozenGigapan;
+use crate::boardgraph::Gigapan;
 use crate::queue::{Bag, QueueState, QueueMap};
 use hashbrown::{HashMap, HashSet};
 use compute::ShardedHashMap;
@@ -13,7 +13,7 @@ type ScanStage = HashMap<Board, (Vec<QueueState>, Vec<Board>)>;
 
 use std::time::Instant;
 
-pub fn chance(gigapan: FrozenGigapan, board: Board, bags: &[Bag], total_queues: usize){
+pub fn chance(gigapan: Gigapan, board: Board, bags: &[Bag], total_queues: usize){
     let instant = Instant::now();
 
     let piece_count: usize = bags.iter().map(|b| b.count as usize).sum();
@@ -60,7 +60,7 @@ pub fn chance(gigapan: FrozenGigapan, board: Board, bags: &[Bag], total_queues: 
 
         prev.into_par_iter().for_each(|(old_board, old_queues)|{
 
-            for (shape, new_boards) in gigapan.get(&old_board).unwrap().into_iter().enumerate(){
+            for (shape, new_boards) in gigapan.get(&old_board).unwrap().iter().enumerate(){
                 let shape = Shape::try_from(shape as u8).unwrap();
 
                 let new_queues = bag.take_with_history(&old_queues, shape, i==0, true);
@@ -117,7 +117,7 @@ pub fn chance(gigapan: FrozenGigapan, board: Board, bags: &[Bag], total_queues: 
 
 
 fn build_path(
-    gigapan: &FrozenGigapan,
+    gigapan: &Gigapan,
     start: Board,
     bags: &[Bag],
 )-> Vec<ScanStage>{
@@ -137,7 +137,7 @@ fn build_path(
 
         for (&old_board, (old_queues, _)) in prev.iter() {
 
-            for (shape, new_boards) in gigapan.get(&old_board).unwrap().into_iter().enumerate(){
+            for (shape, new_boards) in gigapan.get(&old_board).unwrap().iter().enumerate(){
                 let shape = Shape::try_from(shape as u8).unwrap();
                 let new_queues = bag.take(old_queues, shape, i == 0, true);
 

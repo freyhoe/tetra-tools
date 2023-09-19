@@ -36,7 +36,7 @@ impl QueueGenerator {
     pub fn get_bags(&self) -> Vec<Bag>{
         self.bags.iter().map(|input|Bag::new(&input.shapes, input.count)).collect()
     }
-    pub fn invert_queues(&self, sorted_queues: &[Queue]){
+    pub fn invert_queues(&self, _sorted_queues: &[Queue]){
         
     }
     pub fn add_shapes(&mut self, shapes: Vec<Shape>) {
