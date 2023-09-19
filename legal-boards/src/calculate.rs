@@ -7,10 +7,9 @@ use crate::boardgraph::FrozenGigapan;
 use crate::queue::{Bag, QueueState, QueueMap};
 use hashbrown::{HashMap, HashSet};
 use compute::ShardedHashMap;
-use smallvec::SmallVec;
 
 
-type ScanStage = HashMap<Board, (SmallVec<[QueueState; 7]>, SmallVec< [Board; 7]>)>;
+type ScanStage = HashMap<Board, (Vec<QueueState>, Vec<Board>)>;
 
 use std::time::Instant;
 
@@ -127,7 +126,7 @@ fn build_path(
     let mut prev: ScanStage = HashMap::new();
     let first_queues = bags.first().unwrap().init_hold();
 
-    prev.insert(start, (first_queues, SmallVec::new()));
+    prev.insert(start, (first_queues, Vec::new()));
     for (_stage, (bag, i)) in bags
         .iter()
         .flat_map(|b| (0..b.count).into_iter().map(move |i| (b, i)))

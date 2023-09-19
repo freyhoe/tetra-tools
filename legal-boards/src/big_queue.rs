@@ -137,7 +137,7 @@ impl Queue {
         results
     }
 
-    pub fn natural_order_key(self) -> u64 {
+    pub fn natural_order_key(self) -> u64 { //honestly some voodoo shit tbh
         #![allow(non_snake_case)]
 
         let jihgfedcba = self.0;

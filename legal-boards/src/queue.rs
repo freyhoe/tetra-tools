@@ -4,7 +4,6 @@ use std::{
 };
 
 use hashbrown::HashSet;
-use smallvec::SmallVec;
 
 use srs_4l::gameplay::Shape;
 use crate::big_queue::Queue;
@@ -229,7 +228,7 @@ impl Bag {
         bag
     }
 
-    pub fn init_hold(&self) -> SmallVec<[QueueState; 7]> {
+    pub fn init_hold(&self) -> Vec<QueueState> {
         let initial = QueueState(self.full);
 
         Shape::ALL
@@ -243,8 +242,8 @@ impl Bag {
         shape: Shape,
         is_first: bool,
         can_hold: bool,
-    ) -> SmallVec<[QueueState; 7]> {
-        let mut states = SmallVec::new();
+    ) -> Vec<QueueState> {
+        let mut states = Vec::new();
 
         for &queue in queues {
             let queue = if is_first { queue.next(self) } else { queue };
