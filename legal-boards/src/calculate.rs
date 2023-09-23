@@ -50,7 +50,7 @@ pub fn chance(gigapan: FrozenGigapan, board: Board, bags: &[Bag], total_queues: 
     let first_queues = bags.first().unwrap().init_hold_with_history();
 
     prev.insert(board, first_queues);
-    for (_stage, (bag, i)) in bags
+    for (stage, (bag, i)) in bags
         .iter()
         .flat_map(|b| (0..b.count).into_iter().map(move |i| (b, i)))
         .skip(1)
@@ -81,7 +81,7 @@ pub fn chance(gigapan: FrozenGigapan, board: Board, bags: &[Bag], total_queues: 
                 }
             }
         });
-        print!("b: {}", next.len());
+        print!("{stage}: {} ", next.len());
         std::io::stdout().flush().unwrap();
 
         prev = next;
