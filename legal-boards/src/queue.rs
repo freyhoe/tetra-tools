@@ -6,7 +6,7 @@ use std::{
 use hashbrown::HashSet;
 
 use srs_4l::gameplay::Shape;
-use crate::big_queue::Queue;
+use srs_4l::queue::Queue;
 use nohash::IntMap;
 pub type QueueMap = IntMap<QueueState, HashSet<Queue>>;
 
@@ -18,7 +18,7 @@ struct BagInput{
 }
 pub struct QueueGenerator {
     bags: Vec<BagInput>,
-    total_queues: usize
+    total_queues: usize,
 }
 impl QueueGenerator {
     pub fn new() -> Self {
