@@ -20,7 +20,7 @@ fn main() -> std::io::Result<()> {
 
 
     println!("running:{board} {}", queue);
-    legal_boards::calculate::chance(giga, board, &queue.get_bags(), queue.queue_count());
+    legal_boards::calculate::chance(&giga, board, &queue.get_bags(), queue.queue_count());
 
     Ok(())
 }

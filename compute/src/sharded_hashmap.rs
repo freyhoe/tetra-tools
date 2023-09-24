@@ -189,6 +189,27 @@ where
     }
 }
 
+impl<K, V, const SHARD_SIZE: usize, H> FromIterator<(K, V)>
+    for ShardedHashMap<K, V, SHARD_SIZE, H>
+where
+    K: Hash + Eq + Send,
+    V: Send,
+    H: BuildHasher + Default + Sync,
+{
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+    {
+        let map = Self::new();
+
+        iter.into_iter().for_each(|(k, v)| {
+            map.insert(k, v);
+        });
+
+        map
+    }
+}
+
 impl<'a, K, V, const SHARD_SIZE: usize, H> ParallelIterator for &'a FrozenMap<K, V, SHARD_SIZE, H>
 where
     K: Hash + Eq + Send + Sync,

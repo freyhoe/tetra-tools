@@ -368,4 +368,11 @@ impl QueueState {
         new.0 |= (shape as u16) << 13;
         Some(new)
     }
+
+    pub fn force_swap(self, shape: Shape)-> Self{
+        let mut new = self.0;
+        new &= 0b1111111111111;
+        new |= (shape as u16) << 13;
+        Self(new)
+    } 
 }
