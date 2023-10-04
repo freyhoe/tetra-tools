@@ -15,3 +15,4 @@ srs-4l = { path = "../srs-4l" }
 compute = { path = "../compute" }
 hashbrown = "0.14.0"
 fumen = "0.1.2"
+indicatif = "0.17.7"

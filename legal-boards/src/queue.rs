@@ -267,6 +267,47 @@ impl Bag {
 
         states
     }
+    pub fn take_with_push(
+        &self,
+        queues: &[QueueState],
+        shape: Shape,
+        is_first: bool,
+        can_hold: bool,
+    ) -> (Vec<QueueState>, Vec<Shape>) {
+        let mut states = Vec::new();
+        let mut pieces = Vec::with_capacity(7);
+
+
+        for &queue in queues {
+            let queue = if is_first { queue.next(self) } else { queue };
+
+            if queue.hold() == Some(shape) {
+                for swap_shape in Shape::ALL {
+                    if let Some(new) = queue.swap(self, swap_shape) {
+                        if !states.contains(&new) {
+                            states.push(new);
+                        }
+                        if !pieces.contains(&swap_shape){
+                            pieces.push(swap_shape);
+                        }
+                    }
+                }
+            } else if can_hold {
+                if let Some(new) = queue.take(self, shape) {
+                    if !states.contains(&new) {
+                        states.push(new);
+                    }
+                    if !pieces.contains(&shape){
+                        pieces.push(shape);
+                    }
+                }
+            } else{
+                println!("fail")
+            }
+        }
+
+        (states, pieces)
+    }
 
     pub fn init_hold_with_history(&self) -> QueueMap {
         let initial = QueueState(self.full);
