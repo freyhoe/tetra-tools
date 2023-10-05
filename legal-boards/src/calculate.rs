@@ -1,14 +1,12 @@
 use std::collections::VecDeque;
 use std::fmt::Write;
-use std::time::Instant;
 
 use crate::boardgraph::FrozenGigapan;
-use crate::queue::{Bag, QueueMap, QueueState};
+use crate::queue::{Bag, QueueState};
 
 use hashbrown::{HashMap, HashSet};
-use rayon::prelude::{IntoParallelRefIterator, ParallelIterator, IntoParallelIterator};
+use rayon::prelude::{ParallelIterator, IntoParallelIterator};
 use srs_4l::gameplay::{Board, Shape};
-use srs_4l::queue::Queue;
 
 type ScanStage = HashMap<Board, (Vec<QueueState>, Vec<Board>)>;
 
@@ -49,30 +47,28 @@ fn see_x_chance(
     permute_bags(&next_bags, &mut permutations, 0, QueueState(next_bags.first().unwrap().1.full), &mut queue);
 
 
-    let test_queue = vec![Shape::I, Shape::Z, Shape::J, Shape::S,Shape::S,Shape::J,Shape::L];
-    test_set_queue(gigapan, culled, bags, start_board, &test_queue);
-    /*let bar = indicatif::ProgressBar::new(permutations.len() as u64);
+    let bar = indicatif::ProgressBar::new(permutations.len() as u64);
 
     bar.set_style(indicatif::ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {pos}/{human_len} ({eta})")
     .unwrap()
     .with_key("eta", |state: &indicatif::ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
     .progress_chars("#>-"));
 
-    let fails : Vec<_>= permutations.into_iter().filter_map(|queue|{
+    let fails : Vec<_>= permutations.into_par_iter().filter_map(|queue|{
         let passed = test_set_queue(gigapan, culled, bags, start_board, &queue);
         bar.inc(1);
-        if !passed{
-            Some(queue)
+        if !passed==24{
+            Some((queue, passed))
         }else{
             None
         }
     }).collect();
 
-    for fail in fails{
-        println!("{:?}", fail);
-    }*/
+    for (fail, succ) in fails{
+        println!("{:?} {}", fail, succ);
+    }
 }
-
+/* 
 fn set_queue_path(
     gigapan: &FrozenGigapan,
     culled: &HashSet<Board>,
@@ -115,32 +111,35 @@ fn set_queue_path(
     }
     prev
 }
-
+*/
 fn set_queue_graph(
     gigapan: &FrozenGigapan,
     culled: &HashSet<Board>,
     start_board: Board,
     start_queue: &[Shape],
     start_holds: HashSet<Shape>
-) -> HashMap<(Board, Shape), (Vec<Board>, HashSet<Vec<Shape>>)>{
+) -> Vec<HashMap<(Board, Shape), (Vec<(Board, Shape)>, HashSet<Vec<Shape>>)>>{
+
+    let mut stages = Vec::new();
     let mut prev = HashMap::new();
 
     for hold in start_holds{
         prev.insert((start_board, hold), (Vec::new(), HashSet::new()));
     }
+
     for &shape in start_queue.iter() {
         let mut next = HashMap::new();
 
-        prev.into_iter().for_each(|((old_board, old_hold), _preds)| {
+        prev.iter().for_each(|(&(old_board, old_hold), _preds)| {
             let edges: &[Vec<Board>; 7] = gigapan.get(&old_board).unwrap();
 
             for &new_board in &edges[old_hold as usize] {
                 if !culled.contains(&new_board) {
                     continue;
                 }
-                let (preds, _): &mut (Vec<Board>, HashSet<Vec<Shape>>) = next.entry((new_board, shape)).or_default();
-                if !preds.contains(&old_board){
-                    preds.push(old_board);
+                let (preds, _): &mut (Vec<(Board, Shape)>, HashSet<Vec<Shape>>) = next.entry((new_board, shape)).or_default();
+                if !preds.contains(&(old_board, old_hold)){
+                    preds.push((old_board, old_hold));
                 }
             }
             if old_hold!=shape{
@@ -148,16 +147,19 @@ fn set_queue_graph(
                     if !culled.contains(&new_board) {
                         continue;
                     }
-                    let (preds, _): &mut (Vec<Board>, HashSet<Vec<Shape>>) = next.entry((new_board, shape)).or_default();
-                    if !preds.contains(&old_board){
-                        preds.push(old_board);
+                    let (preds, _): &mut (Vec<(Board, Shape)>, HashSet<Vec<Shape>>) = next.entry((new_board, shape)).or_default();
+                    if !preds.contains(&(old_board, old_hold)){
+                        preds.push((old_board, old_hold));
                     }
                 }
             }
         });
+        stages.push(prev);
         prev = next;
     }
-    prev
+    stages.push(prev);
+
+    stages
 }
 
 fn test_set_queue_path(
@@ -210,18 +212,19 @@ fn test_set_queue(
     bags: &[Bag],
     start_board: Board,
     start_queue: &[Shape],
-) -> bool {
+) -> usize {
 
 
     let mut first_holds = HashSet::with_capacity(1);
     first_holds.insert(*start_queue.first().unwrap());
 
 
-    let edge_boards = set_queue_path(gigapan, culled, start_board, &start_queue[1..], first_holds);
+    let mut graph = set_queue_graph(gigapan, culled, start_board, &start_queue[1..], first_holds);
 
-    if edge_boards.len() == 0 {
-        return false
-    }
+    if graph.last().unwrap().len()==0{
+        return 0
+    };
+    //remember to check if graph completes
 
     let blank_queue_state = {
         let mut state = QueueState(bags.first().unwrap().full);
@@ -246,6 +249,37 @@ fn test_set_queue(
 
     permute_bags(&next_bags, &mut permutations, 0, blank_queue_state, &mut queue);
 
+    let leaves = graph.last_mut().unwrap();
+    for (&(board, hold),(_, queues)) in leaves{
+        let mut holds = HashSet::new();
+        holds.insert(hold);
+        for permutation in &permutations{
+            let res = test_set_queue_path(gigapan, culled, board, permutation, holds.clone());
+            if res {
+                queues.insert(permutation.clone());
+            }
+        }
+    }
+
+    for idx in (1..graph.len()).rev(){
+        let (prev_stage, this_stage) = match &mut graph[(idx - 1)..] {
+            [prev, this, ..] => (prev, this),
+            _ => unreachable!(),
+        };
+        for ((_b, _), (pred_boards, queues)) in this_stage{
+            for state in pred_boards{
+                let (_, pred_queues) = prev_stage.get_mut(state).unwrap();
+                pred_queues.extend(queues.iter().cloned());
+            }
+        }
+    }
+
+    let mut max = 0;
+
+    for ((_board,_hold), (_,queues)) in &graph[1]{
+        max = max.max(queues.len());
+    }
+    /* 
     let mut max = 0;
     for (_i, (board, holds)) in edge_boards.into_iter().enumerate() {
         let mut count = 0;
@@ -258,7 +292,8 @@ fn test_set_queue(
             println!("new max: {board} {:?} {}", holds, count);
         }
     }
-    false
+    */
+    max
     
 }
 
