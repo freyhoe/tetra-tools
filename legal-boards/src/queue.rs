@@ -1,14 +1,10 @@
 use std::{
     fmt::{Display, Write},
-    str::FromStr,
+    str::FromStr
 };
 
-use hashbrown::HashSet;
-
 use srs_4l::gameplay::Shape;
-use srs_4l::queue::Queue;
-use nohash::IntMap;
-pub type QueueMap = IntMap<QueueState, HashSet<Queue>>;
+use std::collections::VecDeque;
 
 
 struct BagInput{
@@ -16,11 +12,11 @@ struct BagInput{
     count: u8,
     ordered: bool
 }
-pub struct QueueGenerator {
+pub struct CombinatoricQueue {
     bags: Vec<BagInput>,
     total_queues: usize,
 }
-impl QueueGenerator {
+impl CombinatoricQueue {
     pub fn new() -> Self {
         Self {
             bags: Vec::new(),
@@ -34,10 +30,39 @@ impl QueueGenerator {
         self.total_queues
     }
     pub fn get_bags(&self) -> Vec<Bag>{
-        self.bags.iter().map(|input|Bag::new(&input.shapes, input.count)).collect()
+        self.bags.iter().map(|input|{//cursed boxed iterators in order to have Once and Map in parralel 
+            let iter: Box<dyn Iterator<Item= Bag>> = if input.ordered{
+                Box::new(input.shapes.iter().map(|&shape|{
+                    Bag::new(&[shape], 1)
+                }))
+            }else{
+                Box::new(std::iter::once(Bag::new(&input.shapes, input.count)))
+            };
+            iter
+        }).flatten().collect()
+    }
+    pub fn get_counted_bags(&self)-> Vec<(u8, Bag)>{
+        self.bags.iter().map(|input|{//cursed boxed iterators in order to have Once and Map in parralel 
+            let iter: Box<dyn Iterator<Item= (u8, Bag)>> = if input.ordered{
+                Box::new(input.shapes.iter().map(|&shape|{
+                    (0, Bag::new(&[shape], 1))
+                }))
+            }else{
+                Box::new(
+                    std::iter::repeat(Bag::new(&input.shapes, input.count))
+                    .take(input.count as usize)
+                    .enumerate()
+                    .map(|(i, bag)|{
+                        (i as u8, bag)
+                    })
+                )
+            };
+            iter
+        }).flatten().collect()
     }
     pub fn add_shapes(&mut self, shapes: Vec<Shape>) {
-        self.bags.push(BagInput { shapes, count: 1, ordered: true })
+        let count = shapes.len() as u8;
+        self.bags.push(BagInput { shapes, count, ordered: true})
     }
     pub fn add_bag(&mut self, shapes: Vec<Shape>, count: Option<u8>, inverted: bool) {
 
@@ -58,7 +83,61 @@ impl QueueGenerator {
         self.bags.push(BagInput{shapes: new_shapes, count, ordered: false});
     }
 }
-impl Display for QueueGenerator{
+
+pub fn get_counted_bags(bags: &[Bag])->Vec<(u8, &Bag)>{
+    bags
+    .iter()
+    .flat_map(|b| (0..b.count).into_iter().map(move |i| (i, b)))
+    .collect()
+}
+
+pub fn get_queue_permutations(counted_bags: &[(u8, Bag)], start_state: Option<(usize, QueueState)>, max_depth: Option<usize>)-> Vec<Vec<Shape>>{
+    let mut queue = VecDeque::new();
+    let mut permutations = Vec::new();
+
+    let max_depth = max_depth.unwrap_or(counted_bags.len());
+    if let Some((start_depth, queue_state)) = start_state{
+        recursive_permute_bags(counted_bags, &mut permutations, start_depth, max_depth, queue_state, &mut queue);
+    }else{
+        let queue_state = QueueState(counted_bags.first().unwrap().1.full);
+        recursive_permute_bags(counted_bags, &mut permutations, 0, max_depth, queue_state, &mut queue);
+    }
+    permutations
+}
+
+fn recursive_permute_bags(bags: &[(u8, Bag)], permutations: &mut Vec<Vec<Shape>>, depth: usize, max_depth:usize, state: QueueState, queue: &mut VecDeque<Shape>){
+    if depth >= max_depth{
+        permutations.push(queue.iter().cloned().collect());
+        return
+    }
+    let (bag_placement, bag) = &bags[depth];
+    let state = if bag_placement == &0{state.next(&bag)}else{state};
+    for shape in Shape::ALL{
+        if let Some(state) = state.take(&bag, shape){
+            queue.push_back(shape);
+            recursive_permute_bags(bags, permutations, depth+1, max_depth, state, queue);
+            queue.pop_back();
+        }
+    }
+}
+
+#[test]
+fn queuecombo(){
+    let input_str = "[IJSZ]!IJ*p3";
+    let queue = CombinatoricQueue::from_str(input_str).unwrap();
+
+    let permus = get_queue_permutations(&queue.get_counted_bags(), None, None);
+    assert_eq!(permus.len(), queue.queue_count());
+    assert_eq!(permus.len(), 5040);
+
+    let input_str = "IZJSSJLIOZT";
+    let queue = CombinatoricQueue::from_str(input_str).unwrap();
+    assert_eq!(queue.queue_count(), 1);
+    assert_eq!(queue.get_counted_bags().len(), 11);
+
+}
+
+impl Display for CombinatoricQueue{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut iter = self.bags.iter().peekable();
         while let Some(inputs) = iter.next(){
@@ -95,18 +174,142 @@ impl Display for QueueGenerator{
 #[test]
 fn queuegen_string(){
     let input_str = "[^]p3**p7*p1[^JLT]p2JLT[SZ]!";
-    let queue = QueueGenerator::from_str(input_str).unwrap();
-    println!("input_str: {input_str}, cleaned: {}", queue)
+    let queue = CombinatoricQueue::from_str(input_str).unwrap();
+    assert_eq!(queue.to_string(), "*p3,*,*p7,*,[IOSZ]p2,JLT,[SZ]!");
 }
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Bag {
+    pub count: u8,
+    pub full: u16,
+    pub masks: [u16; 7],
+}
+
+impl Bag {
+    pub fn new(shapes: &[Shape], count: u8) -> Bag {
+        assert!(count as usize <= shapes.len());
+        assert!(shapes.len() <= 13);
+
+        let mut bag = Bag {
+            count,
+            full: (1 << shapes.len()) - 1,
+            masks: [0; 7],
+        };
+
+        for (i, &shape) in shapes.iter().enumerate() {
+            bag.masks[shape as usize] |= 1 << i;
+        }
+
+        bag
+    }
+
+    pub fn init_hold(&self) -> Vec<QueueState> {
+        let initial = QueueState(self.full);
+
+        Shape::ALL
+            .iter()
+            .filter_map(|&shape| initial.swap(self, shape))
+            .collect()
+    }
+    pub fn take(
+        &self,
+        queues: &[QueueState],
+        shape: Shape,
+        is_first: bool,
+        can_hold: bool,
+    ) -> Vec<QueueState> {
+        let mut states = Vec::new();
+
+        for &queue in queues {
+            let queue = if is_first { queue.next(self) } else { queue };
+
+            if queue.hold() == Some(shape) {
+                for swap_shape in Shape::ALL {
+                    if let Some(new) = queue.swap(self, swap_shape) {
+                        if !states.contains(&new) {
+                            states.push(new);
+                        }
+                    }
+                }
+            } else if can_hold {
+                if let Some(new) = queue.take(self, shape) {
+                    if !states.contains(&new) {
+                        states.push(new);
+                    }
+                }
+            }
+        }
+
+        states
+    }
+}
+
+
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct QueueState(pub u16);
+
+impl std::hash::Hash for QueueState {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_u16(self.0)
+    }
+}
+
+impl nohash::IsEnabled for QueueState {}
+
+impl QueueState {
+    pub fn hold(self) -> Option<Shape> {
+        match self.0 >> 13 {
+            0 => Some(Shape::I),
+            1 => Some(Shape::J),
+            2 => Some(Shape::L),
+            3 => Some(Shape::O),
+            4 => Some(Shape::S),
+            5 => Some(Shape::T),
+            6 => Some(Shape::Z),
+            _ => None,
+        }
+    }
+
+    pub fn next(self, bag: &Bag) -> QueueState {
+        QueueState(self.0 & 0b1110000000000000 | bag.full)
+    }
+
+    pub fn take(self, bag: &Bag, shape: Shape) -> Option<QueueState> {
+        let shape_field = self.0 & bag.masks[shape as usize];
+
+        if shape_field == 0 {
+            return None;
+        }
+
+        let new_shape_field = shape_field & (shape_field - 1);
+        Some(QueueState(self.0 ^ shape_field ^ new_shape_field))
+    }
+
+    pub fn swap(self, bag: &Bag, shape: Shape) -> Option<QueueState> {
+        let mut new = self.take(bag, shape)?;
+        new.0 &= 0b1111111111111;
+        new.0 |= (shape as u16) << 13;
+        Some(new)
+    }
+
+    pub fn force_swap(self, shape: Shape)-> Self{
+        let mut new = self.0;
+        new &= 0b1111111111111;
+        new |= (shape as u16) << 13;
+        Self(new)
+    } 
+}
+
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct InvalidTokenError;
 
-impl FromStr for QueueGenerator {
+impl FromStr for CombinatoricQueue {
     type Err = InvalidTokenError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut queue = QueueGenerator::new();
+        let mut queue = CombinatoricQueue::new();
         let mut open_bracket = false;
         let mut current_bag: Vec<Shape> = Vec::new();
         let s = s.replace("*", "[IJLOSTZ]");
@@ -198,219 +401,4 @@ impl FromStr for QueueGenerator {
         }
         Ok(queue)
     }
-}
-
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Bag {
-    pub count: u8,
-    pub full: u16,
-    pub masks: [u16; 7],
-}
-
-impl Bag {
-    pub fn new(shapes: &[Shape], count: u8) -> Bag {
-        assert!(count as usize <= shapes.len());
-        assert!(shapes.len() <= 13);
-
-        let mut bag = Bag {
-            count,
-            full: (1 << shapes.len()) - 1,
-            masks: [0; 7],
-        };
-
-        for (i, &shape) in shapes.iter().enumerate() {
-            bag.masks[shape as usize] |= 1 << i;
-        }
-
-        bag
-    }
-
-    pub fn init_hold(&self) -> Vec<QueueState> {
-        let initial = QueueState(self.full);
-
-        Shape::ALL
-            .iter()
-            .filter_map(|&shape| initial.swap(self, shape))
-            .collect()
-    }
-    pub fn take(
-        &self,
-        queues: &[QueueState],
-        shape: Shape,
-        is_first: bool,
-        can_hold: bool,
-    ) -> Vec<QueueState> {
-        let mut states = Vec::new();
-
-        for &queue in queues {
-            let queue = if is_first { queue.next(self) } else { queue };
-
-            if queue.hold() == Some(shape) {
-                for swap_shape in Shape::ALL {
-                    if let Some(new) = queue.swap(self, swap_shape) {
-                        if !states.contains(&new) {
-                            states.push(new);
-                        }
-                    }
-                }
-            } else if can_hold {
-                if let Some(new) = queue.take(self, shape) {
-                    if !states.contains(&new) {
-                        states.push(new);
-                    }
-                }
-            }
-        }
-
-        states
-    }
-    pub fn take_with_push(
-        &self,
-        queues: &[QueueState],
-        shape: Shape,
-        is_first: bool,
-        can_hold: bool,
-    ) -> (Vec<QueueState>, Vec<Shape>) {
-        let mut states = Vec::new();
-        let mut pieces = Vec::with_capacity(7);
-
-
-        for &queue in queues {
-            let queue = if is_first { queue.next(self) } else { queue };
-
-            if queue.hold() == Some(shape) {
-                for swap_shape in Shape::ALL {
-                    if let Some(new) = queue.swap(self, swap_shape) {
-                        if !states.contains(&new) {
-                            states.push(new);
-                        }
-                        if !pieces.contains(&swap_shape){
-                            pieces.push(swap_shape);
-                        }
-                    }
-                }
-            } else if can_hold {
-                if let Some(new) = queue.take(self, shape) {
-                    if !states.contains(&new) {
-                        states.push(new);
-                    }
-                    if !pieces.contains(&shape){
-                        pieces.push(shape);
-                    }
-                }
-            } else{
-                println!("fail")
-            }
-        }
-
-        (states, pieces)
-    }
-
-    pub fn init_hold_with_history(&self) -> QueueMap {
-        let initial = QueueState(self.full);
-
-        Shape::ALL
-            .iter()
-            .filter_map(|&shape| initial.swap(self, shape))
-            .map(|s|{
-                let mut set = HashSet::new();
-                let q = Queue::empty();
-                set.insert(q.push_first(s.hold().unwrap()));
-                (s, set)
-            })
-            .collect()
-    }
-    pub fn take_with_history(
-        &self,
-        queues: &QueueMap,
-        shape: Shape,
-        is_first: bool,
-        can_hold: bool,
-    ) -> QueueMap {
-        let mut states = IntMap::with_capacity_and_hasher(7, nohash::BuildNoHashHasher::default());
-        for (&queue, histories) in queues {
-            let queue = if is_first {queue.next(self) } else { queue };
-
-            if queue.hold() == Some(shape) {
-                for swap_shape in Shape::ALL {
-                    if let Some(new) = queue.swap(self, swap_shape) {
-                        let mut new_histories = HashSet::new();
-                        for history in histories{
-                            new_histories.insert(history.push_first(swap_shape));
-                        }
-                        let entry: &mut HashSet<Queue> = states.entry(new).or_default();
-                        entry.extend(new_histories);
-                    }
-                }
-            } else if can_hold {
-                if let Some(new) = queue.take(self, shape) {
-                    let mut new_histories = HashSet::new();
-                    for history in histories{
-                        new_histories.insert(history.push_first(shape));
-                    }
-                    let entry = states.entry(new).or_default();
-                    entry.extend(new_histories);
-                }
-            }
-        }
-
-        states
-    }
-}
-
-
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct QueueState(pub u16);
-
-impl std::hash::Hash for QueueState {
-    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_u16(self.0)
-    }
-}
-
-impl nohash::IsEnabled for QueueState {}
-
-impl QueueState {
-    pub fn hold(self) -> Option<Shape> {
-        match self.0 >> 13 {
-            0 => Some(Shape::I),
-            1 => Some(Shape::J),
-            2 => Some(Shape::L),
-            3 => Some(Shape::O),
-            4 => Some(Shape::S),
-            5 => Some(Shape::T),
-            6 => Some(Shape::Z),
-            _ => None,
-        }
-    }
-
-    pub fn next(self, bag: &Bag) -> QueueState {
-        QueueState(self.0 & 0b1110000000000000 | bag.full)
-    }
-
-    pub fn take(self, bag: &Bag, shape: Shape) -> Option<QueueState> {
-        let shape_field = self.0 & bag.masks[shape as usize];
-
-        if shape_field == 0 {
-            return None;
-        }
-
-        let new_shape_field = shape_field & (shape_field - 1);
-        Some(QueueState(self.0 ^ shape_field ^ new_shape_field))
-    }
-
-    pub fn swap(self, bag: &Bag, shape: Shape) -> Option<QueueState> {
-        let mut new = self.take(bag, shape)?;
-        new.0 &= 0b1111111111111;
-        new.0 |= (shape as u16) << 13;
-        Some(new)
-    }
-
-    pub fn force_swap(self, shape: Shape)-> Self{
-        let mut new = self.0;
-        new &= 0b1111111111111;
-        new |= (shape as u16) << 13;
-        Self(new)
-    } 
 }

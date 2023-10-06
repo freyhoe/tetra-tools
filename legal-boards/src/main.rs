@@ -7,7 +7,7 @@ fn main() -> std::io::Result<()> {
     let args : Vec<_>= std::env::args().collect();
 
     let board = Board(decode_fumen(&args[1]).expect("valid fumen"));
-    let queue = legal_boards::queue::QueueGenerator::from_str(&args[2]).expect("valid queue");
+    let queue = legal_boards::queue::CombinatoricQueue::from_str(&args[2]).expect("valid queue");
     
     let giga = legal_boards::read_gigapan("./gigapan_shards").unwrap_or_else(|_|{
         println!("you do not have gigapan already build, creating gigapan...");
@@ -20,7 +20,7 @@ fn main() -> std::io::Result<()> {
 
 
     println!("running:{board} {}", queue);
-    legal_boards::calculate::chance(&giga, board, &queue.get_bags());
+    legal_boards::calculate::limited_see_chance(&giga, board, &queue.get_counted_bags());
 
     Ok(())
 }
