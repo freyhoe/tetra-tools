@@ -12,11 +12,10 @@ pub fn create_gigapan() -> std::io::Result<()> {
     std::fs::DirBuilder::new().recursive(true).create("./gigapan_shards")?;
 
     let instant = Instant::now();
-    let (gigapan, reversepan) = boardgraph::compute_gigapan();
+    let (gigapan, _reversepan) = boardgraph::compute_gigapan();
     println!("generated gigapan in {}s", instant.elapsed().as_secs());
 
     write_pan("gigapan_shards", gigapan)?;
-    write_pan("reverse_gigapan_shards", reversepan)?;
 
     Ok(())
 }
