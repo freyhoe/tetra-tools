@@ -40,9 +40,6 @@ impl CombinatoricQueue {
             bags: Vec::new(),
         }
     }
-    pub fn piece_count(&self)->usize{
-        self.bags.iter().map(|input|input.count as usize).sum()
-    }
     pub fn queue_count(&self)->usize{
         let mut count = 1;
         for bag_input in &self.bags{
@@ -53,18 +50,6 @@ impl CombinatoricQueue {
             count *= numerator/denominator
         }
         count
-    }
-    pub fn get_bags(&self) -> Vec<Bag>{
-        self.bags.iter().map(|input|{//cursed boxed iterators in order to have Once and Map in parralel 
-            let iter: Box<dyn Iterator<Item= Bag>> = if input.ordered{
-                Box::new(input.shapes.iter().map(|&shape|{
-                    Bag::new(&[shape], 1)
-                }))
-            }else{
-                Box::new(std::iter::once(Bag::new(&input.shapes, input.count)))
-            };
-            iter
-        }).flatten().collect()
     }
     pub fn get_counted_bags(&self)-> Vec<(u8, Bag)>{
         self.bags.iter().map(|input|{//cursed boxed iterators in order to have Once and Map in parralel 
@@ -113,12 +98,6 @@ impl CombinatoricQueue {
     }
 }
 
-pub fn get_counted_bags(bags: &[Bag])->Vec<(u8, &Bag)>{
-    bags
-    .iter()
-    .flat_map(|b| (0..b.count).into_iter().map(move |i| (i, b)))
-    .collect()
-}
 
 pub fn get_queue_permutations(counted_bags: &[(u8, Bag)], start_state: Option<(usize, QueueState)>, max_depth: Option<usize>)-> Vec<VecDeque<Shape>>{
     let mut queue = VecDeque::new();

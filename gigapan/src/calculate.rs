@@ -1,33 +1,41 @@
 use std::collections::VecDeque;
 use std::fmt::Write;
+use std::time::Instant;
 
-use crate::boardgraph::FrozenGigapan;
+use legal_boards::boardgraph::FrozenGigapan;
 use crate::queue::{Bag, QueueState, get_queue_permutations, CombinatoricQueue};
+use hashbrown::HashSet;
+use compute::ShardedHashMap;
 
-use hashbrown::{HashMap, HashSet};
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use rayon::prelude::{IntoParallelIterator, ParallelIterator, IntoParallelRefMutIterator};
 use srs_4l::gameplay::{Board, Shape};
 
-type ScanStage = HashMap<Board, (Vec<QueueState>, Vec<Board>)>;
+type NoHashBuilder = nohash::BuildNoHashHasher<u64>;
+type ScanStage = ShardedHashMap<Board, (Vec<QueueState>, Vec<Board>), 20, NoHashBuilder>;
 
-pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, see: usize, combinatoric_queue: &CombinatoricQueue) {
+pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, see: usize, combinatoric_queue: &CombinatoricQueue, generate_culled: bool) {
     let counted_bags = &combinatoric_queue.get_counted_bags();
 
     let piece_count: usize = counted_bags.len()-1;
     let new_mino_count = piece_count as u32 * 4;
     if board.0.count_ones() + new_mino_count != 40 {
-        println!("bad queue len");
+        eprintln!("bad queue len");
         return;
     }
+    let culled = if generate_culled{
+        let instant = Instant::now();
+        let c = get_culled_boards(&gigapan, board, counted_bags);
+        eprintln!("found {} total possible path boards in {:?}", c.len(), instant.elapsed());
+        Some(c)
+    }else{
+        None
+    };
+    let culled = culled.as_ref();
 
-    let culled = build_path(&gigapan, board, counted_bags);
-
-    println!("found {} total possible boards", culled.len());
-
-    let permutations = get_queue_permutations(counted_bags, None, Some(7));
+    let permutations = get_queue_permutations(counted_bags, None, Some(see));
      
     let bar = indicatif::ProgressBar::new(permutations.len() as u64);
-    bar.set_style(indicatif::ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {pos}/{human_len} ({eta})")
+    bar.set_style(indicatif::ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {pos}/{human_len} queues ({eta})")
     .unwrap()
     .with_key("eta", |state: &indicatif::ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
     .progress_chars("#>-"));
@@ -40,7 +48,9 @@ pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, see: usize, com
         }
     
         let hold = queue.pop_front().unwrap();
-        let passed = max_limited_see_queues(gigapan, &culled, board, hold, &counted_bags[(1+queue.len())..], start_queue_state, &mut queue, 0);
+
+        let revealed_pieces = queue.len();
+        let passed = max_limited_see_queues(gigapan, culled, board, hold, counted_bags, start_queue_state, &mut queue, revealed_pieces+1);
 
         bar.inc(1);
         (queue, passed)
@@ -52,13 +62,13 @@ pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, see: usize, com
         total += covered;
     }
     println!("total: {total}/{}",combinatoric_queue.queue_count());
-    println!("computed in: {}",bar.elapsed().as_secs_f64());
+    eprintln!("computed in: {}",bar.elapsed().as_secs_f64());
     
 }
-
+///DFS search to find the maximum found hidden queues that conform to limited see, and the maximum possible hidden queues
 fn max_limited_see_queues(
     gigapan: &FrozenGigapan,
-    culled: &HashSet<Board>,
+    culled: Option<&HashSet<Board>>,
     board: Board,
     hold: Shape,
     counted_bags: &[(u8, Bag)],
@@ -66,7 +76,7 @@ fn max_limited_see_queues(
     queue: &mut VecDeque<Shape>,
     revealed_pieces: usize)-> (usize, usize){
     
-    if revealed_pieces >= 4{
+    if revealed_pieces >= counted_bags.len(){
         return (test_set_queue(gigapan, culled, board, queue, hold) as usize, 1);
     }
 
@@ -88,9 +98,7 @@ fn max_limited_see_queues(
     let mut next_cutoff = 1;
 
     for &new_board in &edges[use_shape as usize] {
-        if !culled.contains(&new_board) {
-            continue;
-        }
+        if let Some(culled) = culled{if !culled.contains(&new_board){continue;}}
         let mut count = 0;
         let mut cutoff = 0;
 
@@ -111,9 +119,7 @@ fn max_limited_see_queues(
     }
     if use_shape != hold && max!=next_cutoff{
         for &new_board in &edges[hold as usize] {
-            if !culled.contains(&new_board) {
-                continue;
-            }
+            if let Some(culled) = culled{if !culled.contains(&new_board){continue;}}
             let mut count = 0;
             let mut cutoff = 0;
     
@@ -137,10 +143,10 @@ fn max_limited_see_queues(
     (max, next_cutoff)
 }
 
-
+///DFS search to see if the given (board,queue,hold) state achieved PC
 fn test_set_queue(
     gigapan: &FrozenGigapan,
-    culled: &HashSet<Board>,
+    culled: Option<&HashSet<Board>>,
     start_board: Board,
     start_queue: &mut VecDeque<Shape>,
     start_hold: Shape
@@ -153,9 +159,7 @@ fn test_set_queue(
 
     let edges = gigapan.get(&start_board).unwrap();
     for &new_board in &edges[use_shape as usize] {
-        if !culled.contains(&new_board) {
-            continue;
-        }
+        if let Some(culled) = culled{if !culled.contains(&new_board){continue;}}
         if test_set_queue(gigapan, culled, new_board, start_queue, start_hold){
             result = true;break;
         }
@@ -163,9 +167,7 @@ fn test_set_queue(
 
     if start_hold != use_shape{
         for &new_board in &edges[start_hold as usize] {
-            if !culled.contains(&new_board) {
-                continue;
-            }
+            if let Some(culled) = culled{if !culled.contains(&new_board){continue;}}
             if test_set_queue(gigapan, culled, new_board, start_queue, use_shape){
                 result = true;break;
             }
@@ -176,10 +178,10 @@ fn test_set_queue(
     return result;
 }
 
-
-fn build_path(gigapan: &FrozenGigapan, start: Board, counted_bags: &[(u8, Bag)]) -> HashSet<Board> {
+///This function returns a hashset of boards that will reach a perfect clear if they are achieved by the current combinatoric queue input
+fn get_culled_boards(gigapan: &FrozenGigapan, start: Board, counted_bags: &[(u8, Bag)]) -> HashSet<Board> {
     let mut stages = Vec::new();
-    let mut prev: ScanStage = HashMap::new();
+    let mut prev: ScanStage = ShardedHashMap::new();
     let first_queues = counted_bags.first().unwrap().1.init_hold();
 
     prev.insert(start, (first_queues, Vec::new()));
@@ -187,9 +189,9 @@ fn build_path(gigapan: &FrozenGigapan, start: Board, counted_bags: &[(u8, Bag)])
         .skip(1)
         .enumerate()
     {
-        let mut next: ScanStage = HashMap::new();
+        let next: ScanStage = ShardedHashMap::new();
 
-        for (&old_board, (old_queues, _)) in prev.iter() {
+        prev.par_iter_mut().for_each(|(&old_board, (old_queues, _))|{
             for (shape, new_boards) in gigapan.get(&old_board).unwrap().into_iter().enumerate() {
                 let shape = Shape::try_from(shape as u8).unwrap();
                 let new_queues = bag.take(old_queues, shape, i == &0, true);
@@ -199,7 +201,8 @@ fn build_path(gigapan: &FrozenGigapan, start: Board, counted_bags: &[(u8, Bag)])
                 }
 
                 for &new_board in new_boards {
-                    let (queues, preds) = next.entry(new_board).or_default();
+                    let mut lock = next.get_shard_guard(&new_board);
+                    let (queues, preds) = lock.entry(new_board).or_default();
                     for &queue in &new_queues {
                         if !queues.contains(&queue) {
                             queues.push(queue);
@@ -210,29 +213,34 @@ fn build_path(gigapan: &FrozenGigapan, start: Board, counted_bags: &[(u8, Bag)])
                     }
                 }
             }
-        }
+        });
         stages.push(prev);
         prev = next;
     }
-    assert!(prev.len() == 1);
+    assert!(prev.len() == 1, "is a perfect clear even possible?");
     stages.push(prev);
 
+
     let mut culled = HashSet::new();
-    let mut iter = stages.iter().rev();
+    let mut iter = stages.into_iter().rev();
 
     if let Some(final_stage) = iter.next() {
-        for (&board, (_queues, preds)) in final_stage.iter() {
+        final_stage.into_iter().for_each(|(board, (_queues, preds))|{
             culled.insert(board);
-            culled.extend(preds);
-        }
+            for board in preds{
+                culled.insert(board);
+            }
+        });
     }
 
     for stage in iter {
-        for (&board, (_queues, preds)) in stage.iter() {
-            if culled.contains(&board) {
-                culled.extend(preds);
-            }
-        }
+        stage.into_iter().for_each(|(board, (_queues, preds))|{
+            if culled.contains(&board){
+                for board in preds{
+                    culled.insert(board);
+                }
+            };
+        });
     }
     culled
 }
