@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
 use std::fmt::Write;
-use std::iter::FromIterator;
 
 use crate::boardgraph::FrozenGigapan;
-use crate::queue::{Bag, QueueState, get_queue_permutations};
+use crate::queue::{Bag, QueueState, get_queue_permutations, CombinatoricQueue};
 
 use hashbrown::{HashMap, HashSet};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
@@ -11,7 +10,9 @@ use srs_4l::gameplay::{Board, Shape};
 
 type ScanStage = HashMap<Board, (Vec<QueueState>, Vec<Board>)>;
 
-pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, counted_bags: &[(u8, Bag)]) {
+pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, see: usize, combinatoric_queue: &CombinatoricQueue) {
+    let counted_bags = &combinatoric_queue.get_counted_bags();
+
     let piece_count: usize = counted_bags.len()-1;
     let new_mino_count = piece_count as u32 * 4;
     if board.0.count_ones() + new_mino_count != 40 {
@@ -24,12 +25,6 @@ pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, counted_bags: &
     println!("found {} total possible boards", culled.len());
 
     let permutations = get_queue_permutations(counted_bags, None, Some(7));
-    
-    /*use Shape::*;
-    let test_queue = vec![I,Z,J,S,S,J,L];
-     
-    let res = best_moves(gigapan, &culled, board, counted_bags, &test_queue);
-    println!("res {res}");*/
      
     let bar = indicatif::ProgressBar::new(permutations.len() as u64);
     bar.set_style(indicatif::ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {pos}/{human_len} ({eta})")
@@ -45,7 +40,7 @@ pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, counted_bags: &
         }
     
         let hold = queue.pop_front().unwrap();
-        let passed = solve(gigapan, &culled, board, hold, &counted_bags[(1+queue.len())..], start_queue_state, &mut queue, [24, 6, 2, 1], 0);
+        let passed = max_limited_see_queues(gigapan, &culled, board, hold, &counted_bags[(1+queue.len())..], start_queue_state, &mut queue, 0);
 
         bar.inc(1);
         (queue, passed)
@@ -53,63 +48,93 @@ pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, counted_bags: &
 
     bar.finish_and_clear();
     let mut total = 0;
-    for (fail, covered) in fails{
+    for (_fail, (covered, _)) in fails{
         total += covered;
-        println!("{:?} {}", fail, covered);
     }
-    println!("total: {total}");
+    println!("total: {total}/{}",combinatoric_queue.queue_count());
     println!("computed in: {}",bar.elapsed().as_secs_f64());
     
 }
 
-fn solve(gigapan: &FrozenGigapan, culled: &HashSet<Board>, board: Board, hold: Shape, counted_bags: &[(u8, Bag)], state: QueueState, queue: &mut VecDeque<Shape>, cutoffs: [usize; 4], depth: usize)-> usize{
-    if depth >= 4{
-        return test_set_queue(gigapan, culled, board, queue, hold) as usize;
+fn max_limited_see_queues(
+    gigapan: &FrozenGigapan,
+    culled: &HashSet<Board>,
+    board: Board,
+    hold: Shape,
+    counted_bags: &[(u8, Bag)],
+    queue_state: QueueState,
+    queue: &mut VecDeque<Shape>,
+    revealed_pieces: usize)-> (usize, usize){
+    
+    if revealed_pieces >= 4{
+        return (test_set_queue(gigapan, culled, board, queue, hold) as usize, 1);
     }
 
-    let (bag_placement, bag) = &counted_bags[depth];
-    let state = if bag_placement == &0{state.next(&bag)}else{state};
+    let (bag_placement, bag) = &counted_bags[revealed_pieces];
+    let queue_state = if bag_placement == &0{queue_state.next(&bag)}else{queue_state};
 
     let use_shape = queue.pop_front().unwrap();
     let mut max = 0;
 
     let edges = gigapan.get(&board).unwrap();
+    let next_states: Vec<_> = Shape::ALL.iter().filter_map(|&shape|{
+        if let Some(queue_state) = queue_state.take(&bag, shape){
+            Some((shape, queue_state))
+        }else{
+            None
+        }
+    }).collect();
+
+    let mut next_cutoff = 1;
+
     for &new_board in &edges[use_shape as usize] {
         if !culled.contains(&new_board) {
             continue;
         }
         let mut count = 0;
+        let mut cutoff = 0;
 
-        for shape in Shape::ALL{
-            if let Some(state) = state.take(&bag, shape){
-                queue.push_back(shape);
-                count += solve(gigapan, culled, new_board, hold, counted_bags, state, queue, cutoffs, depth+1);
-                queue.pop_back();
+        for &(shape, queue_state) in &next_states{
+            queue.push_back(shape);
+            let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, new_board, hold, counted_bags, queue_state, queue, revealed_pieces+1);
+            count += next_count;
+            if next_cutoff==1{cutoff += next_possible_queues;}
+            queue.pop_back();
+            if count > max{
+                max = count;
             }
-            max = max.max(count);
-            if max==cutoffs[depth]{break};
+        }
+        if next_cutoff==1{next_cutoff = cutoff;}
+        if max==next_cutoff{
+            break;
         }
     }
-    if use_shape != hold{
+    if use_shape != hold && max!=next_cutoff{
         for &new_board in &edges[hold as usize] {
             if !culled.contains(&new_board) {
                 continue;
             }
             let mut count = 0;
+            let mut cutoff = 0;
     
-            for shape in Shape::ALL{
-                if let Some(state) = state.take(&bag, shape){
-                    queue.push_back(shape);
-                    count += solve(gigapan, culled, new_board, use_shape, counted_bags, state, queue, cutoffs, depth+1);
-                    queue.pop_back();
+            for &(shape, queue_state) in &next_states{
+                queue.push_back(shape);
+                let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, new_board, use_shape, counted_bags, queue_state, queue, revealed_pieces+1);
+                count += next_count;
+                if next_cutoff==1{cutoff += next_possible_queues;}
+                queue.pop_back();
+                if count > max{
+                    max = count;
                 }
-                max = max.max(count);
-                if max==cutoffs[depth]{break};
+            }
+            if next_cutoff==1{next_cutoff = cutoff;}
+            if max==next_cutoff{
+                break;
             }
         }
     }
     queue.push_front(use_shape);
-    max
+    (max, next_cutoff)
 }
 
 

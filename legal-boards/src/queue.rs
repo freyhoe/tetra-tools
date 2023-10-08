@@ -3,6 +3,7 @@ use std::{
     str::FromStr
 };
 
+use hashbrown::HashMap;
 use srs_4l::gameplay::Shape;
 use std::collections::VecDeque;
 
@@ -10,24 +11,48 @@ use std::collections::VecDeque;
 struct BagInput{
     shapes: Vec<Shape>,
     count: u8,
+    shape_set: HashMap<Shape, usize>,
     ordered: bool
 }
+
+fn shape_set_from_list(list: &[Shape])->HashMap<Shape, usize>{
+    let mut shape_set = HashMap::with_capacity(7);
+    for &shape in list{
+        match shape_set.entry(shape){
+            hashbrown::hash_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut()+=1;
+            },
+            hashbrown::hash_map::Entry::Vacant(entry) => {
+                entry.insert(1);
+            },
+        }
+    }
+    shape_set
+}
+
+
 pub struct CombinatoricQueue {
     bags: Vec<BagInput>,
-    total_queues: usize,
 }
 impl CombinatoricQueue {
     pub fn new() -> Self {
         Self {
             bags: Vec::new(),
-            total_queues: 1
         }
     }
     pub fn piece_count(&self)->usize{
         self.bags.iter().map(|input|input.count as usize).sum()
     }
     pub fn queue_count(&self)->usize{
-        self.total_queues
+        let mut count = 1;
+        for bag_input in &self.bags{
+            if bag_input.ordered{continue;}
+            let numerator : usize = ((bag_input.shapes.len()-(bag_input.count as usize)+1)..=bag_input.shapes.len()).product();
+            let denominator : usize = bag_input.shape_set.values().map(|count|{(1..=*count).product::<usize>()}).product();
+            assert!(numerator%denominator==0);
+            count *= numerator/denominator
+        }
+        count
     }
     pub fn get_bags(&self) -> Vec<Bag>{
         self.bags.iter().map(|input|{//cursed boxed iterators in order to have Once and Map in parralel 
@@ -62,7 +87,8 @@ impl CombinatoricQueue {
     }
     pub fn add_shapes(&mut self, shapes: Vec<Shape>) {
         let count = shapes.len() as u8;
-        self.bags.push(BagInput { shapes, count, ordered: true})
+        let shape_set = shape_set_from_list(&shapes);
+        self.bags.push(BagInput { shapes, count, ordered: true, shape_set})
     }
     pub fn add_bag(&mut self, shapes: Vec<Shape>, count: Option<u8>, inverted: bool) {
 
@@ -79,8 +105,11 @@ impl CombinatoricQueue {
         };
         let shape_len = new_shapes.len();
         let count = count.unwrap_or(shape_len as u8);
-        self.total_queues *= ((shape_len+1-count as usize)..=shape_len).product::<usize>();
-        self.bags.push(BagInput{shapes: new_shapes, count, ordered: false});
+
+        let shape_set = shape_set_from_list(&new_shapes);
+
+        assert!(count as usize <= shape_len && count > 0, "asserting that count: {} is valid for bag: {:?}", count, new_shapes);
+        self.bags.push(BagInput{shapes: new_shapes, count, ordered: false, shape_set});
     }
 }
 
@@ -134,6 +163,13 @@ fn queuecombo(){
     let queue = CombinatoricQueue::from_str(input_str).unwrap();
     assert_eq!(queue.queue_count(), 1);
     assert_eq!(queue.get_counted_bags().len(), 11);
+
+    let input_str = "[SSZZ]!";
+    let queue = CombinatoricQueue::from_str(input_str).unwrap();
+
+    let permus = get_queue_permutations(&queue.get_counted_bags(), None, None);
+    assert_eq!(permus.len(), queue.queue_count());
+    assert_eq!(permus.len(), 6);
 
 }
 
@@ -293,12 +329,7 @@ impl QueueState {
         Some(new)
     }
 
-    pub fn force_swap(self, shape: Shape)-> Self{
-        let mut new = self.0;
-        new &= 0b1111111111111;
-        new |= (shape as u16) << 13;
-        Self(new)
-    } 
+
 }
 
 

@@ -20,7 +20,7 @@ fn main() -> std::io::Result<()> {
 
 
     println!("running:{board} {}", queue);
-    legal_boards::calculate::limited_see_chance(&giga, board, &queue.get_counted_bags());
+    legal_boards::calculate::limited_see_chance(&giga, board, 7, &queue);
 
     Ok(())
 }
