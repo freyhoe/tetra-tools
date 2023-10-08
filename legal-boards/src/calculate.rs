@@ -1,4 +1,6 @@
+use std::collections::VecDeque;
 use std::fmt::Write;
+use std::iter::FromIterator;
 
 use crate::boardgraph::FrozenGigapan;
 use crate::queue::{Bag, QueueState, get_queue_permutations};
@@ -23,228 +25,130 @@ pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, counted_bags: &
 
     let permutations = get_queue_permutations(counted_bags, None, Some(7));
     
-    use Shape::*;
+    /*use Shape::*;
     let test_queue = vec![I,Z,J,S,S,J,L];
      
     let res = best_moves(gigapan, &culled, board, counted_bags, &test_queue);
-    println!("res {res}");
-    /* 
+    println!("res {res}");*/
+     
     let bar = indicatif::ProgressBar::new(permutations.len() as u64);
     bar.set_style(indicatif::ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {pos}/{human_len} ({eta})")
     .unwrap()
     .with_key("eta", |state: &indicatif::ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
     .progress_chars("#>-"));
 
-    let fails : Vec<_>= permutations.into_par_iter().filter_map(|queue|{
-        let passed = best_moves(gigapan, &culled, board, counted_bags, &queue);
-        bar.inc(1);
+    let fails : Vec<_>= permutations.into_par_iter().map(|mut queue|{
+        let mut start_queue_state = QueueState(counted_bags.first().unwrap().1.full);
+        for ((i, bag), shape) in counted_bags.iter().zip(queue.iter()){
+            let s = if i == &0 { start_queue_state.next(bag) } else { start_queue_state };
+            start_queue_state = s.take(bag, *shape).unwrap();
+        }
+    
+        let hold = queue.pop_front().unwrap();
+        let passed = solve(gigapan, &culled, board, hold, &counted_bags[(1+queue.len())..], start_queue_state, &mut queue, [24, 6, 2, 1], 0);
 
-        if queue == test_queue{
-            println!("test_queue passed? : {passed}==24");
-        }
-        let passed = best_moves(gigapan, &culled, board, counted_bags, &queue);
         bar.inc(1);
-        if passed==24{
-            None
-        }else{
-            println!("fail {:?}", queue);
-            Some((queue, passed))
-        }
+        (queue, passed)
     }).collect();
-    println!("failed len: {}", fails.len());
+
+    bar.finish_and_clear();
+    let mut total = 0;
     for (fail, covered) in fails{
+        total += covered;
         println!("{:?} {}", fail, covered);
     }
+    println!("total: {total}");
     println!("computed in: {}",bar.elapsed().as_secs_f64());
-    */
+    
 }
 
-pub fn best_moves(gigapan: &FrozenGigapan, culled: &HashSet<Board>, board: Board, counted_bags: &[(u8, Bag)], queue: &[Shape])->usize{
-    let mut start_queue_state = QueueState(counted_bags.first().unwrap().1.full);
-    for ((i, bag), shape) in counted_bags.iter().zip(queue.iter()){
-        let s = if i == &0 { start_queue_state.next(bag) } else { start_queue_state };
-        start_queue_state = s.take(bag, *shape).unwrap();
-
-    }
-    let permutations = get_queue_permutations(counted_bags, Some((queue.len(), start_queue_state)), None);
-
-
-    let mut stages = Vec::new();
-    let mut prev = HashMap::new();
-
-    let first_hold = queue.first().unwrap().clone();
-
-    prev.insert((board, first_hold), (Vec::new(), HashSet::new()));
-
-    for &shape in queue.iter().skip(1){
-        let mut next = HashMap::new();
-        for (&(old_board, old_hold), _) in prev.iter(){
-            let edges: &[Vec<Board>; 7] = gigapan.get(&old_board).unwrap();
-
-            for &new_board in &edges[old_hold as usize] {
-                if !culled.contains(&new_board){continue;}
-                let (preds, _): &mut (Vec<(Board, Shape)>, HashSet<Vec<Shape>>) = next.entry((new_board, shape)).or_default();
-                if !preds.contains(&(old_board, old_hold)){
-                    preds.push((old_board, old_hold));
-                }
-            }
-            if old_hold!=shape{
-                for &new_board in &edges[shape as usize] {
-                    if !culled.contains(&new_board){continue;}
-                    let (preds, _): &mut (Vec<(Board, Shape)>, HashSet<Vec<Shape>>) = next.entry((new_board, old_hold)).or_default();
-                    if !preds.contains(&(old_board, old_hold)){
-                        preds.push((old_board, old_hold));
-                    }
-                }
-            }
-        }        
-        stages.push(prev);
-        prev = next;
+fn solve(gigapan: &FrozenGigapan, culled: &HashSet<Board>, board: Board, hold: Shape, counted_bags: &[(u8, Bag)], state: QueueState, queue: &mut VecDeque<Shape>, cutoffs: [usize; 4], depth: usize)-> usize{
+    if depth >= 4{
+        return test_set_queue(gigapan, culled, board, queue, hold) as usize;
     }
 
-    for (&(old_board, old_hold), (_, queues)) in prev.iter_mut(){
-        let mut holds = HashSet::new();
-        holds.insert(old_hold);
-        for permutation in &permutations{
-            let res = test_set_queue(gigapan, culled, old_board, permutation, holds.clone());
-            if res {
-                queues.insert(permutation.clone());
+    let (bag_placement, bag) = &counted_bags[depth];
+    let state = if bag_placement == &0{state.next(&bag)}else{state};
+
+    let use_shape = queue.pop_front().unwrap();
+    let mut max = 0;
+
+    let edges = gigapan.get(&board).unwrap();
+    for &new_board in &edges[use_shape as usize] {
+        if !culled.contains(&new_board) {
+            continue;
+        }
+        let mut count = 0;
+
+        for shape in Shape::ALL{
+            if let Some(state) = state.take(&bag, shape){
+                queue.push_back(shape);
+                count += solve(gigapan, culled, new_board, hold, counted_bags, state, queue, cutoffs, depth+1);
+                queue.pop_back();
+            }
+            max = max.max(count);
+            if max==cutoffs[depth]{break};
+        }
+    }
+    if use_shape != hold{
+        for &new_board in &edges[hold as usize] {
+            if !culled.contains(&new_board) {
+                continue;
+            }
+            let mut count = 0;
+    
+            for shape in Shape::ALL{
+                if let Some(state) = state.take(&bag, shape){
+                    queue.push_back(shape);
+                    count += solve(gigapan, culled, new_board, use_shape, counted_bags, state, queue, cutoffs, depth+1);
+                    queue.pop_back();
+                }
+                max = max.max(count);
+                if max==cutoffs[depth]{break};
             }
         }
     }
-    stages.push(prev);
-
-
-
-    for idx in (1..stages.len()).rev(){
-        let (prev_stage, this_stage) = match &mut stages[(idx - 1)..] {
-            [prev, this, ..] => (prev, this),
-            _ => unreachable!(),
-        };
-        for ((_b, _), (pred_boards, queues)) in this_stage{
-            for state in pred_boards{
-                let (_, pred_queues) = prev_stage.get_mut(state).unwrap();
-                pred_queues.extend(queues.iter().cloned());
-
-
-                if idx > 3 && pred_queues.len()==permutations.len(){
-                    return permutations.len()
-                }
-            }
-        }
-    }
-    //6 2 1
-    for permutation in permutations{
-        let mut new_stages = Vec::new();
-        let mut prev = HashSet::new();
-
-
-        let cuttoffs = vec![24,6,2,1];
-        let cuttoffs = cuttoffs.iter().zip(permutation.iter());
-
-        let first_hold = queue.first().unwrap().clone();
-    
-        prev.insert((board, first_hold));
-
-        let mut revealed_shapes = Vec::new();
-    
-        for ((i, &shape), (&cutoff, &revealed_shape)) in queue.iter().enumerate().skip(1).zip(cuttoffs){
-            let mut next = HashSet::new();
-            for &(old_board, old_hold) in prev.iter(){
-                let edges: &[Vec<Board>; 7] = gigapan.get(&old_board).unwrap();
-    
-                for &new_board in &edges[old_hold as usize] {
-                    match stages[i].get(&(new_board, shape)){
-                        Some((_, queues)) => {
-                            let mut count = 0;
-                            for queue in queues{
-                                if queue.iter().zip(revealed_shapes.iter()).all(|(a,b)|{
-                                    a==b
-                                }){count+=1};
-                            }
-                            if count == cutoff{
-                                next.insert((new_board, shape));
-                            }
-                        },
-                        None => continue,
-                    }
-                }
-                if old_hold!=shape{
-                    for &new_board in &edges[shape as usize] {
-                        match stages[i].get(&(new_board, shape)){
-                            Some((_, queues)) => {
-                                let mut count = 0;
-                                for queue in queues{
-                                    if queue.iter().zip(revealed_shapes.iter()).all(|(a,b)|{
-                                        a==b
-                                    }){count+=1};
-                                }
-                                if count == cutoff{
-                                    next.insert((new_board, shape));
-                                }
-                            },
-                            None => continue,
-                        }
-                    }
-                }
-            }
-            new_stages.push(prev);
-            revealed_shapes.push(revealed_shape);
-            prev = next;
-
-            for (board, hold) in prev.iter(){
-                println!("{} {:?}", board, hold);
-            }
-        }
-        println!("{:?} {:?}", prev.len(), permutation);
-    }
-    0
+    queue.push_front(use_shape);
+    max
 }
+
 
 fn test_set_queue(
     gigapan: &FrozenGigapan,
     culled: &HashSet<Board>,
     start_board: Board,
-    start_queue: &[Shape],
-    start_holds: HashSet<Shape>
+    start_queue: &mut VecDeque<Shape>,
+    start_hold: Shape
 )->bool{
     if start_board == Board::full(){
         return true;
     }
-    let use_shape = start_queue[0];
+    let use_shape = start_queue.pop_front().unwrap();
+    let mut result = false;
 
     let edges = gigapan.get(&start_board).unwrap();
-
-    if !start_holds.contains(&use_shape){
-        for &new_board in &edges[use_shape as usize] {
-            if !culled.contains(&new_board) {
-                continue;
-            }
-
-            let mut next_holds: HashSet<Shape> = HashSet::with_capacity(7);
-            next_holds.extend(&start_holds);
-
-            if test_set_queue(gigapan, culled, new_board, &start_queue[1..], next_holds){
-                return true;
-            }
+    for &new_board in &edges[use_shape as usize] {
+        if !culled.contains(&new_board) {
+            continue;
+        }
+        if test_set_queue(gigapan, culled, new_board, start_queue, start_hold){
+            result = true;break;
         }
     }
-    for hold_piece in start_holds {
-        for &new_board in &edges[hold_piece as usize] {
+
+    if start_hold != use_shape{
+        for &new_board in &edges[start_hold as usize] {
             if !culled.contains(&new_board) {
                 continue;
             }
-
-            let mut next_holds = HashSet::with_capacity(1);
-            next_holds.insert(use_shape);
-
-            if test_set_queue(gigapan, culled, new_board, &start_queue[1..], next_holds){
-                return true;
+            if test_set_queue(gigapan, culled, new_board, start_queue, use_shape){
+                result = true;break;
             }
         }
     }
 
-    false
+    start_queue.push_front(use_shape);
+    return result;
 }
 
 

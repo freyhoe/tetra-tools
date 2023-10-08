@@ -91,7 +91,7 @@ pub fn get_counted_bags(bags: &[Bag])->Vec<(u8, &Bag)>{
     .collect()
 }
 
-pub fn get_queue_permutations(counted_bags: &[(u8, Bag)], start_state: Option<(usize, QueueState)>, max_depth: Option<usize>)-> Vec<Vec<Shape>>{
+pub fn get_queue_permutations(counted_bags: &[(u8, Bag)], start_state: Option<(usize, QueueState)>, max_depth: Option<usize>)-> Vec<VecDeque<Shape>>{
     let mut queue = VecDeque::new();
     let mut permutations = Vec::new();
 
@@ -105,9 +105,9 @@ pub fn get_queue_permutations(counted_bags: &[(u8, Bag)], start_state: Option<(u
     permutations
 }
 
-fn recursive_permute_bags(bags: &[(u8, Bag)], permutations: &mut Vec<Vec<Shape>>, depth: usize, max_depth:usize, state: QueueState, queue: &mut VecDeque<Shape>){
+fn recursive_permute_bags(bags: &[(u8, Bag)], permutations: &mut Vec<VecDeque<Shape>>, depth: usize, max_depth:usize, state: QueueState, queue: &mut VecDeque<Shape>){
     if depth >= max_depth{
-        permutations.push(queue.iter().cloned().collect());
+        permutations.push(queue.clone());
         return
     }
     let (bag_placement, bag) = &bags[depth];
