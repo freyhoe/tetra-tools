@@ -11,7 +11,7 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// SFinder queue input
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "", required=false)]
     queue: String,
 
     /// How many pieces gigapan can be aware for certain of at any given state
@@ -22,22 +22,19 @@ struct Args {
     #[arg(short, long, default_value = "v115@vhAAgH")]
     fumen: String,
 
-    /// Generate Gigapan
-    #[arg(short, long, default_value_t = false)]
-    generate: bool
 }
 
 fn main() -> std::io::Result<()> {
 
     let args = Args::parse();
-    if args.generate{
+    if args.queue == ""{
         return legal_boards::create_gigapan();
     }
 
     let board = Board(decode_fumen(&args.fumen).expect("valid fumen"));
     let queue = queue::CombinatoricQueue::from_str(&args.queue).expect("valid queue");
     
-    let giga = legal_boards::read_gigapan("./gigapan_shards").unwrap().freeze();
+    let giga = legal_boards::read_gigapan("./gigapan_shards").expect("unable to find gigapan shards! try with --generate").freeze();
 
     println!("giga loaded: {}",giga.len());
 

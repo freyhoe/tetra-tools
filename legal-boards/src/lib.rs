@@ -52,13 +52,26 @@ pub fn read_gigapan(path: &str) -> std::result::Result<Gigapan, Box<dyn Error>>{
             None
         }
     }).collect();
-    paths.par_iter().for_each(|path|{
-        let file = OpenOptions::new().read(true).open(path).unwrap();
+
+    let errors: Vec<_> = paths.par_iter().filter_map(|path|{
+        let file = OpenOptions::new().read(true).open(path);
+        if let Err(e) = file{
+            return Some(Box::new(e));
+        }
+        let file = file.unwrap();
         let reader = BufReader::new(file);
-        let shard = srs_4l::board_list::read_graph(reader).unwrap();
+        let shard = srs_4l::board_list::read_graph(reader);
+        if let Err(e) = shard{
+            return Some(Box::new(e));
+        }
+        let shard = shard.unwrap();
         for (k,v) in shard{
             gigapan.insert(k, v);
-        }
-    });
-    Ok(gigapan)
+        };
+        None
+    }).collect();
+    if errors.len()==0{
+        return Ok(gigapan)
+    }
+    return Err(errors.into_iter().nth(0).unwrap())
 }
