@@ -61,8 +61,10 @@ pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, see: usize, com
     for (_fail, (covered, _)) in fails{
         total += covered;
     }
-    println!("total: {total}/{}",combinatoric_queue.queue_count());
-    eprintln!("computed in: {}",bar.elapsed().as_secs_f64());
+    let total_queues = combinatoric_queue.queue_count();
+    println!("passing queues: {total}/{}",total_queues);
+    println!("chance: {}", total as f64 / total_queues as f64);
+    eprintln!("computed in: {:.3}s",bar.elapsed().as_secs_f64());
     
 }
 ///DFS search to find the maximum found hidden queues that conform to limited see, and the maximum possible hidden queues
@@ -114,7 +116,7 @@ fn max_limited_see_queues(
         }
         if next_cutoff==1{next_cutoff = cutoff;}
         if max==next_cutoff{
-            break;
+            //break;
         }
     }
     if use_shape != hold && max!=next_cutoff{
@@ -135,7 +137,7 @@ fn max_limited_see_queues(
             }
             if next_cutoff==1{next_cutoff = cutoff;}
             if max==next_cutoff{
-                break;
+                //break;
             }
         }
     }

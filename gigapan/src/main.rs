@@ -22,6 +22,10 @@ struct Args {
     #[arg(short, long, default_value = "v115@vhAAgH")]
     fumen: String,
 
+    /// Culled
+    #[arg(short, long, action)]
+    culled: bool
+
 }
 
 fn main() -> std::io::Result<()> {
@@ -34,12 +38,12 @@ fn main() -> std::io::Result<()> {
     let board = Board(decode_fumen(&args.fumen).expect("valid fumen"));
     let queue = queue::CombinatoricQueue::from_str(&args.queue).expect("valid queue");
     
-    let giga = legal_boards::read_gigapan("./gigapan_shards").expect("unable to find gigapan shards! try with --generate").freeze();
+    let giga = legal_boards::read_gigapan("./gigapan_shards").expect("unable to find gigapan shards! try without arguments to generate").freeze();
 
     println!("giga loaded: {}",giga.len());
 
     println!("running:{board} {}", queue);
-    calculate::limited_see_chance(&giga, board, 7, &queue, false);
+    calculate::limited_see_chance(&giga, board, 7, &queue, args.culled);
 
     Ok(())
 }
