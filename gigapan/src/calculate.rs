@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::fmt::Write;
+use std::fmt::Write as FmtWrite;
 use std::time::Instant;
 
 use legal_boards::boardgraph::FrozenGigapan;
@@ -12,6 +12,9 @@ use srs_4l::gameplay::{Board, Shape};
 
 type NoHashBuilder = nohash::BuildNoHashHasher<u64>;
 type ScanStage = ShardedHashMap<Board, (Vec<QueueState>, Vec<Board>), 20, NoHashBuilder>;
+
+use std::fs::File;
+use std::io::{Write, LineWriter};
 
 pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, see: usize, combinatoric_queue: &CombinatoricQueue, generate_culled: bool) {
     let counted_bags = &combinatoric_queue.get_counted_bags();
@@ -37,7 +40,7 @@ pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, see: usize, com
     let bar = indicatif::ProgressBar::new(permutations.len() as u64);
     bar.set_style(indicatif::ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:.cyan/blue}] {pos}/{human_len} queues ({eta})")
     .unwrap()
-    .with_key("eta", |state: &indicatif::ProgressState, w: &mut dyn Write| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
+    .with_key("eta", |state: &indicatif::ProgressState, w: &mut dyn FmtWrite| write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap())
     .progress_chars("#>-"));
 
     let fails : Vec<_>= permutations.into_par_iter().map(|mut queue|{
@@ -46,25 +49,33 @@ pub fn limited_see_chance(gigapan: &FrozenGigapan, board: Board, see: usize, com
             let s = if i == &0 { start_queue_state.next(bag) } else { start_queue_state };
             start_queue_state = s.take(bag, *shape).unwrap();
         }
-    
-        let hold = queue.pop_front().unwrap();
-
         let revealed_pieces = queue.len();
-        let passed = max_limited_see_queues(gigapan, culled, board, hold, counted_bags, start_queue_state, &mut queue, revealed_pieces+1);
-
+        let hold = queue.pop_front().unwrap();
+        let passed = max_limited_see_queues(gigapan, culled, board, hold, counted_bags, start_queue_state, &mut queue, revealed_pieces);
+        queue.push_front(hold);
         bar.inc(1);
         (queue, passed)
     }).collect();
 
     bar.finish_and_clear();
+
+    let file = File::create("fail-queues.txt").unwrap();
+    let mut file = LineWriter::new(file);
+
     let mut total = 0;
-    for (_fail, (covered, _)) in fails{
+    for (fail, (covered, maximum)) in fails{
         total += covered;
+        let maximum = maximum.unwrap_or(0);
+        if covered != maximum{
+            file.write_fmt(format_args!("{:?} {} {}\n", fail, covered, maximum)).unwrap();
+        }
     }
     let total_queues = combinatoric_queue.queue_count();
     println!("passing queues: {total}/{}",total_queues);
-    println!("chance: {}", total as f64 / total_queues as f64);
+    println!("chance: {}%", total as f64 / total_queues as f64 * 100.0);
     eprintln!("computed in: {:.3}s",bar.elapsed().as_secs_f64());
+
+
     
 }
 ///DFS search to find the maximum found hidden queues that conform to limited see, and the maximum possible hidden queues
@@ -76,10 +87,10 @@ fn max_limited_see_queues(
     counted_bags: &[(u8, Bag)],
     queue_state: QueueState,
     queue: &mut VecDeque<Shape>,
-    revealed_pieces: usize)-> (usize, usize){
+    revealed_pieces: usize)-> (usize, Option<usize>){
     
     if revealed_pieces >= counted_bags.len(){
-        return (test_set_queue(gigapan, culled, board, queue, hold) as usize, 1);
+        return (test_set_queue(gigapan, culled, board, queue, hold) as usize, Some(1));
     }
 
     let (bag_placement, bag) = &counted_bags[revealed_pieces];
@@ -97,52 +108,62 @@ fn max_limited_see_queues(
         }
     }).collect();
 
-    let mut next_cutoff = 1;
+    let mut cutoffs = vec![None; next_states.len()];
 
     for &new_board in &edges[use_shape as usize] {
         if let Some(culled) = culled{if !culled.contains(&new_board){continue;}}
         let mut count = 0;
-        let mut cutoff = 0;
+        let mut max_count = 0;
 
-        for &(shape, queue_state) in &next_states{
+        for (idx, &(shape, queue_state)) in next_states.iter().enumerate(){
             queue.push_back(shape);
             let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, new_board, hold, counted_bags, queue_state, queue, revealed_pieces+1);
             count += next_count;
-            if next_cutoff==1{cutoff += next_possible_queues;}
-            queue.pop_back();
-            if count > max{
-                max = count;
+            if let Some(next_possible_queues) = next_possible_queues{
+                if next_count == next_possible_queues{max_count+=1;}
+                if cutoffs[idx].is_none(){cutoffs[idx] = Some(next_possible_queues)}
             }
+            queue.pop_back();
         }
-        if next_cutoff==1{next_cutoff = cutoff;}
-        if max==next_cutoff{
-            //break;
+        if count > max{
+            max = count;
         }
+        if max_count==next_states.len(){break;}
     }
-    if use_shape != hold && max!=next_cutoff{
+
+    if use_shape != hold{
         for &new_board in &edges[hold as usize] {
             if let Some(culled) = culled{if !culled.contains(&new_board){continue;}}
             let mut count = 0;
-            let mut cutoff = 0;
+            let mut max_count = 0;
     
-            for &(shape, queue_state) in &next_states{
+            for (idx, &(shape, queue_state)) in next_states.iter().enumerate(){
                 queue.push_back(shape);
                 let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, new_board, use_shape, counted_bags, queue_state, queue, revealed_pieces+1);
                 count += next_count;
-                if next_cutoff==1{cutoff += next_possible_queues;}
-                queue.pop_back();
-                if count > max{
-                    max = count;
+                if let Some(next_possible_queues) = next_possible_queues{
+                    if next_count == next_possible_queues{max_count+=1;}
+                    if cutoffs[idx].is_none(){cutoffs[idx] = Some(next_possible_queues)}
                 }
+                queue.pop_back();
             }
-            if next_cutoff==1{next_cutoff = cutoff;}
-            if max==next_cutoff{
-                //break;
+            if count > max{
+                max = count;
             }
+            if max_count==next_states.len(){break;}
         }
     }
+
     queue.push_front(use_shape);
-    (max, next_cutoff)
+
+    let mut next_cutoff = 0;
+    for cutoff in cutoffs{
+        match cutoff{
+            Some(cutoff)=>{next_cutoff+=cutoff},
+            None=> return (max, None)
+        }
+    }
+    (max, Some(next_cutoff))
 }
 
 ///DFS search to see if the given (board,queue,hold) state achieved PC
