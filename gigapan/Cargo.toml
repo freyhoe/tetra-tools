@@ -2,8 +2,7 @@
 name = "gigapan"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "fork of wirelyre's PC-finder to offer tools for PC-research"
 
 [dependencies]
 hashbrown = "0.14.0"

@@ -14,9 +14,9 @@ struct Args {
     #[arg(short, long, default_value = "", required=false)]
     queue: String,
 
-    /// How many pieces gigapan can be aware for certain of at any given state
-    #[arg(short, long, default_value_t = 7)]
-    see: u8,
+    /// How many previews gigapan uses
+    #[arg(short, long, default_value_t = 5)]
+    previews: usize,
 
     /// Fumen input of the board
     #[arg(short, long, default_value = "v115@vhAAgH")]
@@ -24,7 +24,15 @@ struct Args {
 
     /// Culled
     #[arg(short, long, action)]
-    culled: bool
+    culled: bool,
+
+    /// Restrict the use of hold
+    #[arg(short, long, action)]
+    no_hold: bool,
+
+    #[arg(short, long, action)]
+    /// Start off simulations with no piece in hold
+    blank_start: bool
 
 }
 
@@ -43,7 +51,7 @@ fn main() -> std::io::Result<()> {
     println!("giga loaded: {}",giga.len());
 
     println!("running:{board} {}", queue);
-    calculate::limited_see_chance(&giga, board, 7, &queue, args.culled);
+    calculate::limited_see_chance(&giga, board, &queue, args.previews, !args.blank_start, !args.no_hold, args.culled);
 
     Ok(())
 }
