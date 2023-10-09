@@ -6,4 +6,6 @@ members = [
 
     "gomen",
     "legal-boards",
+
+    "gigapan"
 ]

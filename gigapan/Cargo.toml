@@ -1,15 +1,19 @@
 [package]
-name = "legal-boards"
+name = "gigapan"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossbeam = "0.8.2"
+hashbrown = "0.14.0"
+fumen = "0.1.2"
+indicatif = "0.17.7"
+
 nohash = "0.2.0"
 rayon = "1.5.3"
-smallvec = { version = "1.9.0", features = ["union"] }
 
 srs-4l = { path = "../srs-4l" }
 compute = { path = "../compute" }
+legal-boards = { path = "../legal-boards" }
+clap = { version = "4.4.6", features = ["derive"]}

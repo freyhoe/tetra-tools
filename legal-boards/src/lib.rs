@@ -1,7 +1,4 @@
 pub mod boardgraph;
-pub mod calculate;
-pub mod queue;
-mod big_queue;
 
 use std::error::Error;
 use std::{fs::OpenOptions, io::{BufWriter, BufReader}};
@@ -15,11 +12,10 @@ pub fn create_gigapan() -> std::io::Result<()> {
     std::fs::DirBuilder::new().recursive(true).create("./gigapan_shards")?;
 
     let instant = Instant::now();
-    let (gigapan, reversepan) = boardgraph::compute_gigapan();
+    let (gigapan, _reversepan) = boardgraph::compute_gigapan();
     println!("generated gigapan in {}s", instant.elapsed().as_secs());
 
     write_pan("gigapan_shards", gigapan)?;
-    write_pan("reverse_gigapan_shards", reversepan)?;
 
     Ok(())
 }
@@ -56,13 +52,26 @@ pub fn read_gigapan(path: &str) -> std::result::Result<Gigapan, Box<dyn Error>>{
             None
         }
     }).collect();
-    paths.par_iter().for_each(|path|{
-        let file = OpenOptions::new().read(true).open(path).unwrap();
+
+    let errors: Vec<_> = paths.par_iter().filter_map(|path|{
+        let file = OpenOptions::new().read(true).open(path);
+        if let Err(e) = file{
+            return Some(Box::new(e));
+        }
+        let file = file.unwrap();
         let reader = BufReader::new(file);
-        let shard = srs_4l::board_list::read_graph(reader).unwrap();
+        let shard = srs_4l::board_list::read_graph(reader);
+        if let Err(e) = shard{
+            return Some(Box::new(e));
+        }
+        let shard = shard.unwrap();
         for (k,v) in shard{
             gigapan.insert(k, v);
-        }
-    });
-    Ok(gigapan)
+        };
+        None
+    }).collect();
+    if errors.len()==0{
+        return Ok(gigapan)
+    }
+    return Err(errors.into_iter().nth(0).unwrap())
 }
