@@ -32,7 +32,11 @@ struct Args {
 
     #[arg(short, long, action)]
     /// Start off simulations with no piece in hold
-    blank_start: bool
+    blank_start: bool,
+
+    #[arg(short, long, action)]
+    /// Consider 2-line PCs
+    two_line: bool
 
 }
 
@@ -51,7 +55,7 @@ fn main() -> std::io::Result<()> {
     println!("giga loaded: {}",giga.len());
 
     println!("running:{board} {}", queue);
-    calculate::limited_see_chance(&giga, board, &queue, args.previews, !args.blank_start, !args.no_hold, args.culled);
+    calculate::limited_see_chance(&giga, board, &queue, args.previews, !args.blank_start, !args.no_hold, args.culled, args.two_line);
 
     Ok(())
 }

@@ -134,6 +134,10 @@ impl Board {
         Board(0xFFFFF_FFFFF)
     }
 
+    pub fn half() -> Board{
+        Board(1048575)
+    }
+
     /// Create a board from a string, lossy function that only tokenizes 'G' and '_'
     pub fn from_str(s: &str) -> Self {
         let mut field = 0;
