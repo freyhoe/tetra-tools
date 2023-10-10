@@ -58,12 +58,15 @@ pub fn limited_see_chance(
             let s = if i == &0 { start_queue_state.next(bag) } else { start_queue_state };
             start_queue_state = s.take(bag, *shape).unwrap();
         }
-        let revealed_pieces = queue.len();
+        let mut revealed_pieces = queue.len();
         let hold = if init_hold{
             Some(queue.pop_front().unwrap())
-        }else{None};
+        }else{
+            revealed_pieces-=1;
+            None
+        };
 
-        let passed = max_limited_see_queues(gigapan, culled, board, hold, use_hold, two_line, counted_bags, start_queue_state, &mut queue, revealed_pieces);
+        let passed = max_limited_see_queues(gigapan, culled, board, hold, use_hold, false, two_line, counted_bags, start_queue_state, &mut queue, revealed_pieces);
         if let Some(hold) = hold{queue.push_front(hold);}
         bar.inc(1);
         (queue, passed)
@@ -112,19 +115,20 @@ fn count_possible_queues(
 }
 
 ///DFS search to find the maximum found hidden queues that conform to limited see, and the maximum possible hidden queues
-fn max_limited_see_queues(
+pub fn max_limited_see_queues(
     gigapan: &FrozenGigapan,
     culled: Option<&HashSet<Board>>,
     board: Board,
     hold: Option<Shape>,
     use_hold: bool,
+    just_held: bool,
     two_line: bool,
     counted_bags: &[(u8, Bag)],
     queue_state: QueueState,
     queue: &mut VecDeque<Shape>,
     revealed_pieces: usize)-> (usize, Option<usize>){
 
-    if two_line && board == Board::half(){ // will only happen on low see i think, just in case
+    if two_line && board == Board::half() || board==Board::full(){ // will only happen on low see i think, just in case
         let total = count_possible_queues(counted_bags, queue_state, revealed_pieces);
         return (total, Some(total))
     }
@@ -152,13 +156,16 @@ fn max_limited_see_queues(
         return (res as usize, Some(1))
     }
 
+
     let (bag_placement, bag) = &counted_bags[revealed_pieces];
+
+
     let queue_state = if bag_placement == &0{queue_state.next(&bag)}else{queue_state};
 
     let use_shape = queue.pop_front().unwrap();
     let mut max = 0;
 
-    let edges = gigapan.get(&board).unwrap();
+    let edges = gigapan.get(&board).expect(format!("board not found in giga: {}", board).as_str());
     let next_states: Vec<_> = Shape::ALL.iter().filter_map(|&shape|{
         if let Some(queue_state) = queue_state.take(&bag, shape){
             Some((shape, queue_state))
@@ -173,11 +180,11 @@ fn max_limited_see_queues(
     let mut oqb_skip = false;
     let mut max_found = false;
  
-    if use_hold && hold.is_none(){
-        if let Some(next_shape) = queue.front(){
-            if next_shape == &use_shape{
-                oqb_skip = true; //if current and next are equal, and theres no piece in hold, the best choice is always to hold to reveal extra piece
-            }
+    if use_hold && hold.is_none() && !just_held{
+        let next_shape = queue.pop_front().unwrap();
+
+        if next_shape == use_shape{
+            oqb_skip = true; //if current and next are equal, and theres no piece in hold, the best choice is always to hold to reveal extra piece
         }
 
         let mut count = 0;
@@ -185,7 +192,7 @@ fn max_limited_see_queues(
 
         for (idx, &(shape, queue_state)) in next_states.iter().enumerate(){
             queue.push_back(shape);
-            let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, board, Some(use_shape), use_hold, two_line, counted_bags, queue_state, queue, revealed_pieces+1);
+            let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, board, Some(use_shape), use_hold, true, two_line, counted_bags, queue_state, queue, revealed_pieces+1);
             count += next_count;
             if let Some(next_possible_queues) = next_possible_queues{
                 if next_count == next_possible_queues{max_count+=1;}
@@ -208,7 +215,7 @@ fn max_limited_see_queues(
             for (idx, &(shape, queue_state)) in next_states.iter().enumerate(){
                 queue.push_back(shape);
 
-                let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, new_board, hold, use_hold, two_line, counted_bags, queue_state, queue, revealed_pieces+1);
+                let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, new_board, hold, use_hold, false, two_line, counted_bags, queue_state, queue, revealed_pieces+1);
                 count += next_count;
                 if let Some(next_possible_queues) = next_possible_queues{
                     if next_count == next_possible_queues{max_count+=1;}
@@ -222,7 +229,7 @@ fn max_limited_see_queues(
             if max_count==next_states.len(){max_found = true; break;}
         }
     }
-    if use_hold && hold.is_some() && !max_found{
+    if use_hold && hold.is_some() && !max_found && !just_held{
         let hold = hold.unwrap();
         if use_shape != hold{
             for &new_board in &edges[hold as usize] {
@@ -232,7 +239,7 @@ fn max_limited_see_queues(
         
                 for (idx, &(shape, queue_state)) in next_states.iter().enumerate(){
                     queue.push_back(shape);
-                    let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, new_board, Some(use_shape), use_hold, two_line, counted_bags, queue_state, queue, revealed_pieces+1);
+                    let (next_count, next_possible_queues) = max_limited_see_queues(gigapan, culled, new_board, Some(use_shape), use_hold, false, two_line, counted_bags, queue_state, queue, revealed_pieces+1);
                     count += next_count;
                     if let Some(next_possible_queues) = next_possible_queues{
                         if next_count == next_possible_queues{max_count+=1;}
@@ -273,7 +280,7 @@ fn test_set_queue_with_hold(
     if start_board == Board::full() || (two_line && start_board==Board::half()){
         return true;
     }
-    let use_shape = start_queue.pop_front().unwrap();
+    let use_shape = start_queue.pop_front().expect(format!("no queue... {} {:?}", start_board, start_hold).as_str());
     let mut result = false;
 
     let edges = gigapan.get(&start_board).unwrap();

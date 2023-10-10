@@ -200,6 +200,12 @@ pub struct Bag {
     pub masks: [u16; 7],
 }
 
+impl Default for Bag{
+    fn default() -> Self {
+        Self::new(&Shape::ALL, 7)
+    }
+}
+
 impl Bag {
     pub fn new(shapes: &[Shape], count: u8) -> Bag {
         assert!(count as usize <= shapes.len());
