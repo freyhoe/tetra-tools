@@ -58,11 +58,10 @@ pub fn limited_see_chance(
             let s = if i == &0 { start_queue_state.next(bag) } else { start_queue_state };
             start_queue_state = s.take(bag, *shape).unwrap();
         }
-        let mut revealed_pieces = queue.len();
+        let revealed_pieces = queue.len();
         let hold = if init_hold{
             Some(queue.pop_front().unwrap())
         }else{
-            revealed_pieces-=1;
             None
         };
 
