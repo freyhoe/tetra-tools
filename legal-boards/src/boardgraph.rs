@@ -160,7 +160,8 @@ pub fn compute_gigapan() -> (Gigapan, Gigapan){
         eprintln!();
     }
 
-    let stages: Vec<_> = stages.drain(..).map(ShardedHashMap::freeze).collect();
+    // progressively drop the stages when we are done with them
+    let stages = stages.drain(..).map(ShardedHashMap::freeze);
 
     const FULL: Board = Board(0xFFFFF_FFFFF);
 
@@ -173,7 +174,7 @@ pub fn compute_gigapan() -> (Gigapan, Gigapan){
         work.freeze()
     };
 
-    for (i, stage) in stages.iter().enumerate().rev() {
+    for (i, stage) in stages.enumerate().rev() {
         println!("{:>4}-piece boards: {:>9}", i, work.len());
 
         work = work
@@ -199,6 +200,6 @@ pub fn compute_gigapan() -> (Gigapan, Gigapan){
             })
             .collect();
     }
-    std::mem::forget(stages);
+    // std::mem::forget(stages);
     (graphmap,reversemap)
 }
