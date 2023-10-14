@@ -182,11 +182,11 @@ pub fn compute_gigapan() -> (Gigapan, Gigapan){
             .flat_map_iter(|(&board, ())| {
                 let preds = stage.get(&board).unwrap();
 
-                let mut shard = reversemap.get_shard_guard(&board);
-                let entry = shard.entry(board).or_insert_with(Default::default);
-                preds.iter().for_each(|&(parent, shape)|{
-                    entry[shape as usize].push(parent);
-                });
+                // let mut shard = reversemap.get_shard_guard(&board);
+                // let entry = shard.entry(board).or_insert_with(Default::default);
+                // preds.iter().for_each(|&(parent, shape)|{
+                //     entry[shape as usize].push(parent);
+                // });
 
                 preds.iter().for_each(|&(parent, shape)|{
                     let mut shard = graphmap.get_shard_guard(&parent);
