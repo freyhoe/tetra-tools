@@ -160,7 +160,8 @@ pub fn compute_gigapan() -> (Gigapan, Gigapan){
         eprintln!();
     }
 
-    let stages: Vec<_> = stages.drain(..).map(ShardedHashMap::freeze).collect();
+    // progressively drop the stages when we are done with them
+    let stages = stages.drain(..).map(ShardedHashMap::freeze);
 
     const FULL: Board = Board(0xFFFFF_FFFFF);
 
@@ -173,7 +174,7 @@ pub fn compute_gigapan() -> (Gigapan, Gigapan){
         work.freeze()
     };
 
-    for (i, stage) in stages.iter().enumerate().rev() {
+    for (i, stage) in stages.enumerate().rev() {
         println!("{:>4}-piece boards: {:>9}", i, work.len());
 
         work = work
@@ -181,11 +182,11 @@ pub fn compute_gigapan() -> (Gigapan, Gigapan){
             .flat_map_iter(|(&board, ())| {
                 let preds = stage.get(&board).unwrap();
 
-                let mut shard = reversemap.get_shard_guard(&board);
-                let entry = shard.entry(board).or_insert_with(Default::default);
-                preds.iter().for_each(|&(parent, shape)|{
-                    entry[shape as usize].push(parent);
-                });
+                // let mut shard = reversemap.get_shard_guard(&board);
+                // let entry = shard.entry(board).or_insert_with(Default::default);
+                // preds.iter().for_each(|&(parent, shape)|{
+                //     entry[shape as usize].push(parent);
+                // });
 
                 preds.iter().for_each(|&(parent, shape)|{
                     let mut shard = graphmap.get_shard_guard(&parent);
@@ -199,6 +200,6 @@ pub fn compute_gigapan() -> (Gigapan, Gigapan){
             })
             .collect();
     }
-    std::mem::forget(stages);
+    // std::mem::forget(stages);
     (graphmap,reversemap)
 }
